@@ -3,91 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <title>Hyperion Stream Example</title>
-    <script src="dist/bundle.js"></script>
+    <script src="https://wax.hyperion.eosrio.io/stream-client.js"></script>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans&display=swap" rel="stylesheet">
 </head>
-<body>
+<body style="font-family: 'Open Sans', sans-serif;">
+<h2>Hyperion Stream Demo</h2>
+<div>
+    <span>Status: <strong id="status">disconnected</strong></span>
+</div>
+<br>
+<table style="text-align: left; border-spacing: 5px">
+    <tr>
+        <th><span>Filter Contract: </span></th>
+        <th><input id="contract" value="eosmechanics"></th>
+    </tr>
+    <tr>
+        <th><span>Filter Action: </span></th>
+        <th><input id="name" placeholder="Action" value="*"></th>
+    </tr>
+    <tr>
+        <th><span>Notified Account: </span></th>
+        <th><input id="account" placeholder="Account"></th>
+    </tr>
+</table>
+<button onclick="connect()">Connect</button>
+<button onclick="disconnect()">Disconnect</button>
+<br>
+<h3>Latest Action</h3>
+<div id="action"></div>
+<div id="actionData"></div>
 <script>
-  let totalMessages = 0;
-  let messages = 0;
-    const pastMsgInterval = setInterval(() => {
-      if (messages === 0) {
-        console.log(`Total Messages Received: ${totalMessages}`);
-        if (totalMessages !== 0) {
-          clearInterval(pastMsgInterval);
-        }
-      } else {
-        totalMessages += messages;
-        console.log(`Incoming Rate: ${messages / 5} msg/s`);
-        messages = 0;
-      }
-    }, 5000);
-
-  const client = new HyperionSocketClient('http://localhost:7000', {async: true});
-
+  const client = new HyperionSocketClient('https://wax.hyperion.eosrio.io', {async: true});
+  let isConnected = false;
   client.onData = async (data, ack) => {
     const content = data.content;
     if (data.type === 'action') {
       const act = data.content['act'];
-      console.log(`\n >>>> Contract: ${act.account} | Action: ${act.name} | Block: ${content['block_num']} <<<< `);
+      console.log(data.content);
+      document.getElementById(
+          'action').innerHTML = `
+<strong>${content['@timestamp']}</strong><br>
+<strong>Current Block: ${content['block_num']} | Producer: ${content['producer']}</strong><br>
+<strong>TX: ${content['trx_id']}</strong><br>
+<strong>${act.account}::${act.name}</strong><br>
+<small>CPU: ${content['cpu_usage_us']} us</small><br>
+<small>NET: ${content['net_usage_words']} bytes</small><br>
+`;
+      let list = '<div>';
       for (const key in act.data) {
         if (act.data.hasOwnProperty(key)) {
-          console.log(`${key} = ${act.data[key]}`);
+          list += `<p>${key} = ${act.data[key]}</p>`;
         }
       }
+      list += '</div>';
+      document.getElementById('actionData').innerHTML = list;
     }
-
-    if (data.type === 'delta') {
-      if (content['present'] === true) {
-        const delta_data = content.data;
-        console.log(
-            `\n >>>> Block: ${content['block_num']} | Contract: ${content.code} | Table: ${content.table} | Scope: ${content['scope']} | Payer: ${content['payer']} <<<< `);
-        if (delta_data) {
-          for (const key in delta_data) {
-            if (delta_data.hasOwnProperty(key)) {
-              console.log(`${key} = ${delta_data[key]}`);
-            }
-          }
-        } else {
-          console.log('ERROR >>>>>>>> ', content);
-        }
-      }
-    }
-
-    messages++;
-    console.log('______________________');
     ack();
   };
 
-  // client.onEmpty = async () => {
-  //     console.log(`Number of messages received: ${messages}`);
-  // };
-
   client.onConnect = () => {
-
     client.streamActions({
-      contract: 'eosio',
-      action: 'voteproducer',
-      account: '',
-      start_from: '2020-03-15T00:00:00.000Z',
+      contract: document.getElementById('contract').value,
+      action: document.getElementById('name').value,
+      account: document.getElementById('account').value,
+      start_from: 0,
       read_until: 0,
       filters: [],
     });
-
-    // client.streamDeltas({
-    //   code: 'eosio.token',
-    //   table: '*',
-    //   scope: '',
-    //   payer: '',
-    //   filters: [],
-    //   start_from: 0,
-    //   read_until: 0,
-    // });
-
   };
 
-  client.connect(() => {
-    console.log('connected!');
-  });
+  function connect() {
+    if (!isConnected) {
+      client.connect(() => {
+        isConnected = true;
+        document.getElementById('status').innerText = 'connected';
+        console.log('connected!');
+        document.getElementById('action').innerText = 'waiting for action...';
+      });
+    }
+  }
+
+  function disconnect() {
+    client.disconnect();
+    document.getElementById('status').innerText = 'disconnected';
+    isConnected = false;
+  }
+
 </script>
 </body>
 </html>
