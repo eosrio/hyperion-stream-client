@@ -9,21 +9,20 @@
 <script>
   let totalMessages = 0;
   let messages = 0;
-
-  const pastMsgInterval = setInterval(() => {
-    if (messages === 0) {
-      console.log(`Total Messages Received: ${totalMessages}`);
-      if (totalMessages !== 0) {
-        clearInterval(pastMsgInterval);
+    const pastMsgInterval = setInterval(() => {
+      if (messages === 0) {
+        console.log(`Total Messages Received: ${totalMessages}`);
+        if (totalMessages !== 0) {
+          clearInterval(pastMsgInterval);
+        }
+      } else {
+        totalMessages += messages;
+        console.log(`Incoming Rate: ${messages / 5} msg/s`);
+        messages = 0;
       }
-    } else {
-      totalMessages += messages;
-      console.log(`Incoming Rate: ${messages / 5} msg/s`);
-      messages = 0;
-    }
-  }, 5000);
+    }, 5000);
 
-  const client = new Hyperion('http://localhost:7000', {async: true});
+  const client = new HyperionSocketClient('http://localhost:7000', {async: true});
 
   client.onData = async (data, ack) => {
     const content = data.content;

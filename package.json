@@ -1,13 +1,13 @@
 {
   "name": "@eosrio/hyperion-stream-client",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "Streaming Client for Hyperion History",
-  "main": "lib/index.js",
+  "main": "lib",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:browser": "node build.js",
-    "build:babel": "babel src -d lib",
-    "run:sample": "node tests/sample.js"
+    "postinstall": "npm run build:tsc",
+    "build:tsc": "tsc",
+    "build:webpack": "webpack"
   },
   "repository": {
     "type": "git",
@@ -20,16 +20,13 @@
     "async": "3.1.0"
   },
   "devDependencies": {
-    "@babel/cli": "^7.8.4",
-    "@babel/core": "^7.8.7",
-    "@babel/plugin-proposal-class-properties": "^7.8.3",
-    "@babel/plugin-transform-modules-commonjs": "^7.8.3",
-    "@babel/plugin-transform-runtime": "^7.8.3",
-    "@babel/polyfill": "^7.8.7",
-    "@babel/preset-env": "^7.8.7",
-    "@babel/runtime": "^7.8.7",
-    "babelify": "^10.0.0",
-    "browserify": "^16.5.0"
+    "@types/node": "^13.9.1",
+    "@types/socket.io-client": "^1.4.32",
+    "@types/async": "^3.0.8",
+    "typescript": "^3.8.3",
+    "ts-loader": "^6.2.1",
+    "webpack-cli": "^3.3.11",
+    "webpack": "^4.42.0"
   },
   "bugs": {
     "url": "https://github.com/eosrio/hyperion-stream-client/issues"

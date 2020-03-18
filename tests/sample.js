@@ -1,4 +1,4 @@
-const Hyperion = require('../lib/index');
+const HyperionSocketClient = require('../lib/index').default;
 
 let totalMessages = 0;
 let messages = 0;
@@ -16,7 +16,7 @@ const pastMsgInterval = setInterval(() => {
   }
 }, 5000);
 
-const client = new Hyperion('http://localhost:7000', {async: true});
+const client = new HyperionSocketClient('http://localhost:7000', {async: true});
 
 client.onData = async (data, ack) => {
   const content = data.content;
