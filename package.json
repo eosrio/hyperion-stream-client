@@ -1,0 +1,38 @@
+{
+  "name": "@eosrio/hyperion-stream-client",
+  "version": "0.3.0",
+  "description": "Streaming Client for Hyperion History",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:browser": "node build.js",
+    "build:babel": "babel src -d lib",
+    "run:sample": "node tests/sample.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eosrio/hyperion-stream-client.git"
+  },
+  "author": "EOS Rio",
+  "license": "MIT",
+  "dependencies": {
+    "socket.io-client": "2.3.0",
+    "async": "3.1.0"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.7.5",
+    "@babel/core": "^7.7.5",
+    "@babel/preset-env": "^7.7.6",
+    "@babel/runtime": "^7.7.6",
+    "@babel/plugin-proposal-class-properties": "^7.7.4",
+    "@babel/plugin-transform-modules-commonjs": "^7.7.5",
+    "@babel/plugin-transform-runtime": "^7.7.6",
+    "@babel/polyfill": "^7.7.0",
+    "babelify": "^10.0.0",
+    "browserify": "^16.5.0"
+  },
+  "bugs": {
+    "url": "https://github.com/eosrio/hyperion-stream-client/issues"
+  },
+  "homepage": "https://github.com/eosrio/hyperion-stream-client#readme"
+}
