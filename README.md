@@ -44,17 +44,6 @@ Flow control mode:
 - Async: **true** - The transmission will be asynchronous and you need an acknowledge function. Incoming data will be held on a local queue until ack is called.
 - Async: **false** - The transmission will be synchronous. The acknowledge function is not needed.
 
-
-The type of transmission could be `async: false or true`:
-- True: The transmission will be asynchronous and you need an acknowledge function. Hyperion will 
-only send the next block when it receives the ack confirmation.
-- False: The transmission will be synchronous. The acknowledge function is not needed.
-
-Connection status can be handled
-When you successfully connect to hyperion, you'll receive a confirmation message:
-
-`connected!`
-
 ### 2. Requests
 
 requests should be defined on the `client.onConnect` property, refer to examples below;
