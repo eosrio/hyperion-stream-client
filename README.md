@@ -37,7 +37,7 @@ Example:
 const client = new HyperionSocketClient('https://example.com', {async: false});
 ```
 
-`https://example.com` is the root domain, from which `https://example.com/v2/...` contain the Hyperion History API
+`https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
 
 Flow control mode:
 
