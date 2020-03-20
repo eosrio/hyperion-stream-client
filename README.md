@@ -46,13 +46,16 @@ Flow control mode:
 
 ### 2. Requests
 
-requests should be defined on the `client.onConnect` property, refer to examples below;
+ - `client.streamActions(request: StreamActionsRequest): void` -- Request action stream
+ - `client.streamDeltas(request: StreamDeltasRequest): void` -- Request delta stream (contract rows)
+ 
+to ensure the client is connected, requests should be defined on the `client.onConnect` property, refer to examples below;
 
 #### 2.1 Action Stream - client.streamActions
 
  - `contract` - contract account
  - `action` - action name
- - `account` - account name
+ - `account` - notified account name
  - `start_from` - start reading on block or on a specific date: (0=disabled)
  - `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
  - `filters` - actions filter (more details below)
@@ -77,11 +80,6 @@ client.onConnect = () => {
   });
 }
 
-client.onData = async (data, ack) => {
-console.log(data); // process incoming data
-ack(); // ACK when done
-}
-
 client.connect(() => {
   console.log('connected!');
 });
@@ -93,7 +91,7 @@ You can setup filters to refine your stream. Filters should use fields following
  - `act.data.producers` (on eosio::voteproducer)
  - `@transfer.to` (here the @ prefix is required since transfers have special mappings)
  
- please refer to the [mapping definitions](https://github.com/eosrio/Hyperion-History-API/blob/develop/definitions/index-templates.ts) to know which data fields that are available
+ please refer to the [mapping definitions](https://github.com/eosrio/Hyperion-History-API/blob/develop/definitions/index-templates.ts) to know which data fields are available
 
 For example, to filter the stream for
 every transfer made to the `eosio.ramfee` account:
@@ -112,7 +110,7 @@ client.streamActions({
 ``` 
 
 To refine even more your stream, you could add more filters. Remember that adding more filters
-will result in a AND operation, by now it's not possible to make OR operations with filters.
+will result in an AND operation, currently it's not possible to make OR operations with filters.
 
 #### 2.2 Delta Stream - client.streamDeltas
 
@@ -150,8 +148,8 @@ data object is structured as follows:
  
 ```javascript
 client.onData = async (data, ack) => {
-    //code here
-    ack(); // you must call ack before receiving the next chunk
+    console.log(data); // process incoming data, replace with your code
+    ack(); // ACK when done
 }
 ```
 
