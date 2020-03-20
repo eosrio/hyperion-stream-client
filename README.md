@@ -80,6 +80,12 @@ client.onConnect = () => {
   });
 }
 
+// see 3 for handling data
+client.onData = async (data, ack) => {
+    console.log(data); // process incoming data, replace with your code
+    ack(); // ACK when done
+}
+
 client.connect(() => {
   console.log('connected!');
 });
