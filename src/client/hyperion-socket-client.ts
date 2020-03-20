@@ -2,6 +2,46 @@ import {queue} from "async";
 import * as io from "socket.io-client";
 import {HyperionClientOptions, StreamActionsRequest, StreamDeltasRequest} from "../interfaces";
 
+interface ActionContent {
+    "@timestamp": string;
+    "global_sequence": number;
+    "account_ram_deltas": {
+        delta: number;
+        account: string;
+    }
+    act: {
+        authorization: {
+            permission: string;
+            actor: string;
+        }
+        account: string;
+        name: string;
+    }
+    "act.account": { "type": "keyword" },
+    "act.name": { "type": "keyword" },
+    "act.data": { "enabled": false },
+    "block_num": { "type": "long" },
+    "action_ordinal": { "type": "long" },
+    "creator_action_ordinal": { "type": "long" },
+    "cpu_usage_us": { "type": "integer" },
+    "net_usage_words": { "type": "integer" },
+    "code_sequence": { "type": "integer" },
+    "abi_sequence": { "type": "integer" },
+    "trx_id": { "type": "keyword" },
+    "producer": { "type": "keyword" },
+    "notified": { "type": "keyword" },
+}
+
+interface DeltaContent {
+
+}
+
+interface IncomingData {
+    type: "action" | "string";
+    mode: "live" | "history";
+    content: ActionContent | DeltaContent
+}
+
 export class HyperionSocketClient {
 
     private socket;
@@ -11,7 +51,7 @@ export class HyperionSocketClient {
     private options;
 
     onConnect;
-    onData;
+    onData: (data: IncomingData, ack?: () => void) => void;
     onEmpty;
 
     online = false;
