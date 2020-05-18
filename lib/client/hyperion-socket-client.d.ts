@@ -1,4 +1,4 @@
-import { HyperionClientOptions, StreamActionsRequest, StreamDeltasRequest } from "../interfaces";
+import { ForkData, HyperionClientOptions, IncomingData, LIBData, StreamActionsRequest, StreamDeltasRequest } from "../interfaces";
 export declare class HyperionSocketClient {
     private socket;
     private socketURL;
@@ -6,7 +6,9 @@ export declare class HyperionSocketClient {
     private dataQueue;
     private options;
     onConnect: any;
-    onData: any;
+    onData: (data: IncomingData, ack?: () => void) => void;
+    onLIB: (data: LIBData) => void;
+    onFork: (data: ForkData) => void;
     onEmpty: any;
     online: boolean;
     private savedRequests;
@@ -42,7 +44,7 @@ export declare class HyperionSocketClient {
      *     console.log('Connection was successful!');
      * });
      */
-    connect(callback: any): void;
+    connect(callback?: () => void): void;
     processActionTrace(action: any, mode: any): void;
     processDeltaTrace(delta: any, mode: any): void;
     resendRequests(): void;

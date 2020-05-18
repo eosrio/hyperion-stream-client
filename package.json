@@ -1,10 +1,10 @@
 {
   "name": "@eosrio/hyperion-stream-client",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "description": "Streaming Client for Hyperion History",
   "main": "lib",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node tests/sample.js",
     "build:tsc": "tsc",
     "build:webpack": "webpack"
   },
@@ -16,16 +16,16 @@
   "license": "MIT",
   "dependencies": {
     "socket.io-client": "2.3.0",
-    "async": "3.1.0"
+    "async": "3.2.0"
   },
   "devDependencies": {
-    "@types/node": "^13.9.1",
-    "@types/socket.io-client": "^1.4.32",
-    "@types/async": "^3.0.8",
-    "typescript": "^3.8.3",
-    "ts-loader": "^6.2.1",
-    "webpack-cli": "^3.3.11",
-    "webpack": "^4.42.0"
+    "@types/node": "14.0.1",
+    "@types/socket.io-client": "1.4.33",
+    "@types/async": "3.2.3",
+    "typescript": "3.9.2",
+    "ts-loader": "7.0.4",
+    "webpack-cli": "3.3.11",
+    "webpack": "4.43.0"
   },
   "bugs": {
     "url": "https://github.com/eosrio/hyperion-stream-client/issues"

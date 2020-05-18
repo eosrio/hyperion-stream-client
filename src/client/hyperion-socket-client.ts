@@ -1,46 +1,13 @@
 import {queue} from "async";
 import * as io from "socket.io-client";
-import {HyperionClientOptions, StreamActionsRequest, StreamDeltasRequest} from "../interfaces";
-
-interface ActionContent {
-    "@timestamp": string;
-    "global_sequence": number;
-    "account_ram_deltas": {
-        delta: number;
-        account: string;
-    }
-    act: {
-        authorization: {
-            permission: string;
-            actor: string;
-        }
-        account: string;
-        name: string;
-    }
-    "act.account": { "type": "keyword" },
-    "act.name": { "type": "keyword" },
-    "act.data": { "enabled": false },
-    "block_num": { "type": "long" },
-    "action_ordinal": { "type": "long" },
-    "creator_action_ordinal": { "type": "long" },
-    "cpu_usage_us": { "type": "integer" },
-    "net_usage_words": { "type": "integer" },
-    "code_sequence": { "type": "integer" },
-    "abi_sequence": { "type": "integer" },
-    "trx_id": { "type": "keyword" },
-    "producer": { "type": "keyword" },
-    "notified": { "type": "keyword" },
-}
-
-interface DeltaContent {
-
-}
-
-interface IncomingData {
-    type: "action" | "string";
-    mode: "live" | "history";
-    content: ActionContent | DeltaContent
-}
+import {
+    ForkData,
+    HyperionClientOptions,
+    IncomingData,
+    LIBData,
+    StreamActionsRequest,
+    StreamDeltasRequest
+} from "../interfaces";
 
 export class HyperionSocketClient {
 
@@ -52,6 +19,8 @@ export class HyperionSocketClient {
 
     onConnect;
     onData: (data: IncomingData, ack?: () => void) => void;
+    onLIB: (data: LIBData) => void;
+    onFork: (data: ForkData) => void;
     onEmpty;
 
     online = false;
@@ -110,11 +79,11 @@ export class HyperionSocketClient {
      *     console.log('Connection was successful!');
      * });
      */
-    connect(callback) {
+    connect(callback?: () => void) {
 
         // setup incoming queue
         if (this.onData) {
-            this.dataQueue = queue((task, callback) => {
+            this.dataQueue = queue((task: IncomingData, callback) => {
                 if (this.options.async) {
                     this.onData(task, () => {
                         callback();
@@ -142,18 +111,35 @@ export class HyperionSocketClient {
         if (!this.socketURL) {
             throw new Error('endpoint was not defined!');
         }
-        this.socket = io(this.socketURL, {transports: ['websocket', 'polling']});
+
+        this.socket = io(this.socketURL, {
+            transports: ['websocket', 'polling']
+        });
+
         this.socket.on('connect', () => {
+            this.online = true;
             if (this.onConnect) {
-                this.online = true;
                 this.onConnect();
             }
             if (callback) {
                 callback();
             }
         });
+
         this.socket.on('error', (msg) => {
             console.log(msg);
+        });
+
+        this.socket.on('lib_update', (msg) => {
+            if (this.onLIB) {
+                this.onLIB(msg);
+            }
+        });
+
+        this.socket.on('fork_event', (msg) => {
+            if (this.onFork) {
+                this.onFork(msg);
+            }
         });
 
         this.socket.on('message', (msg: any) => {
@@ -203,6 +189,7 @@ export class HyperionSocketClient {
         });
 
         this.socket.on('disconnect', () => {
+            this.online = false;
             console.log('disconnected!');
         });
     }
