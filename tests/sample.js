@@ -2,8 +2,8 @@ const HyperionSocketClient = require('../lib/index').default;
 
 const client = new HyperionSocketClient('https://wax.eosrio.io', {
   async: true,
-  libStream: true,
-  chainApi: 'https://wax.eosrio.io', // optional
+  libStream: true, // new parameter to allow a stream based on irreversible data
+  chainApi: 'https://wax.eosrio.io', // must be defined if the main hyperion api doesn't forward v1/chain/get_info
 });
 
 client.onLIB = (libData) => {
@@ -23,9 +23,9 @@ const handler = async (data, ack) => {
   }
 
   if (data.type === 'delta') {
-    const delta_data = content.data;
     console.log(
-        `\n >>>> Present: ${content['present']} | Block: ${content['block_num']} | Contract: ${content.code} | Table: ${content.table} | Scope: ${content['scope']} | Payer: ${content['payer']} <<<< `);
+        `>> Present: ${content['present']} | Block: ${content['block_num']} | Contract: ${content.code} | Table: ${content.table} | Scope: ${content['scope']} | Payer: ${content['payer']} <<`);
+    const delta_data = content.data;
     // if (delta_data) {
     //   for (const key in delta_data) {
     //     if (delta_data.hasOwnProperty(key)) {
