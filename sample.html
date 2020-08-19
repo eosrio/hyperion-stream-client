@@ -39,6 +39,7 @@
     const content = data.content;
     if (data.type === 'action') {
       const act = data.content['act'];
+      console.log(data);
       console.log(data.content);
       document.getElementById(
           'action').innerHTML = `
@@ -66,7 +67,7 @@
       contract: document.getElementById('contract').value,
       action: document.getElementById('name').value,
       account: document.getElementById('account').value,
-      start_from: 0,
+      start_from: -100,
       read_until: 0,
       filters: [],
     });

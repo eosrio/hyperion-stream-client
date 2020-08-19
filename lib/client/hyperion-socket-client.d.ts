@@ -4,17 +4,21 @@ export declare class HyperionSocketClient {
     private socketURL;
     private lastReceivedBlock;
     private dataQueue;
+    private libDataQueue;
     private options;
-    onConnect: any;
+    private reversibleBuffer;
+    onConnect: () => void;
     onData: (data: IncomingData, ack?: () => void) => void;
+    onLibData: (data: IncomingData, ack?: () => void) => void;
     onLIB: (data: LIBData) => void;
     onFork: (data: ForkData) => void;
-    onEmpty: any;
+    onEmpty: () => void;
     online: boolean;
     private savedRequests;
     /**
      * @typedef {object} BaseOptions
      * @property {boolean} async - Enable Asynchronous Mode
+     * @property {boolean} lib_stream - Enable onLibData handler
      */
     /**
      * Construct a new streaming client
@@ -30,11 +34,13 @@ export declare class HyperionSocketClient {
      *     disconnect()
      */
     disconnect(): void;
+    get lastBlockNum(): number;
     /**
      *
      * @param endpoint - Hyperion API Endpoint
      */
     setEndpoint(endpoint: string): void;
+    pushToBuffer(task: any): void;
     /**
      * Start session. Action handlers should be defined before this method is called
      * @param {function} [callback] - function to execute on a successful connection
@@ -47,7 +53,7 @@ export declare class HyperionSocketClient {
     connect(callback?: () => void): void;
     processActionTrace(action: any, mode: any): void;
     processDeltaTrace(delta: any, mode: any): void;
-    resendRequests(): void;
+    resendRequests(): Promise<void>;
     /**
      * Request filter definition
      * @typedef {Object} requestFilter
@@ -68,7 +74,7 @@ export declare class HyperionSocketClient {
      * Send a request for a filtered action traces stream
      * @param {StreamActionsRequest} request - Action Request Options
      */
-    streamActions(request: StreamActionsRequest): void;
+    streamActions(request: StreamActionsRequest): Promise<any>;
     /**
      * Delta request definition
      * @typedef {Object} StreamDeltasRequest
@@ -83,6 +89,6 @@ export declare class HyperionSocketClient {
      * Send a request for a filtered delta traces stream
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    streamDeltas(request: StreamDeltasRequest): void;
-    checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest): void;
+    streamDeltas(request: StreamDeltasRequest): Promise<any>;
+    checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest): Promise<void>;
 }

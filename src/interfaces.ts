@@ -1,5 +1,13 @@
+export interface SavedRequest {
+    type: string,
+    req: StreamActionsRequest | StreamDeltasRequest
+}
+
+
 export interface HyperionClientOptions {
     async: boolean;
+    libStream: boolean;
+    chainApi?: string;
 }
 
 export interface StreamDeltasRequest {
@@ -62,9 +70,10 @@ export interface DeltaContent {
 }
 
 export interface IncomingData {
-    type: "action" | "string";
+    type: "action" | "delta";
     mode: "live" | "history";
     content: ActionContent | DeltaContent
+    irreversible: boolean;
 }
 
 export interface LIBData {

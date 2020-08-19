@@ -1,35 +1,50 @@
-import {queue} from "async";
+import * as queue from "async/queue";
 import * as io from "socket.io-client";
+import fetch from 'node-fetch';
+
 import {
     ForkData,
     HyperionClientOptions,
     IncomingData,
     LIBData,
+    SavedRequest,
     StreamActionsRequest,
     StreamDeltasRequest
 } from "../interfaces";
 
+function trimTrailingSlash(input: string) {
+    if (input.endsWith('/')) {
+        return input.slice(0, input.length - 1);
+    } else {
+        return input;
+    }
+}
+
 export class HyperionSocketClient {
 
     private socket;
-    private socketURL;
-    private lastReceivedBlock;
-    private dataQueue;
-    private options;
+    private socketURL: string;
+    private lastReceivedBlock: number;
+    private dataQueue: queue;
+    private libDataQueue;
+    private options: HyperionClientOptions;
+    private reversibleBuffer = [];
 
-    onConnect;
+    onConnect: () => void;
     onData: (data: IncomingData, ack?: () => void) => void;
+    onLibData: (data: IncomingData, ack?: () => void) => void;
     onLIB: (data: LIBData) => void;
     onFork: (data: ForkData) => void;
-    onEmpty;
+    onEmpty: () => void;
 
-    online = false;
+    online: boolean = false;
 
-    private savedRequests = [];
+    private savedRequests: SavedRequest[] = [];
 
     /**
      * @typedef {object} BaseOptions
      * @property {boolean} async - Enable Asynchronous Mode
+     * @property {boolean} lib_stream - Enable onLibData handler
      */
 
     /**
@@ -40,10 +55,16 @@ export class HyperionSocketClient {
      */
     constructor(endpoint: string, opts: HyperionClientOptions) {
         if (endpoint) {
-            this.socketURL = endpoint;
+            this.socketURL = trimTrailingSlash(endpoint);
         }
         if (opts) {
             this.options = opts;
+            if (this.options.libStream) {
+                console.log('Client configured for lib stream');
+            }
+            if (this.options.chainApi) {
+                this.options.chainApi = trimTrailingSlash(this.options.chainApi);
+            }
         }
     }
 
@@ -56,6 +77,11 @@ export class HyperionSocketClient {
     disconnect() {
         this.lastReceivedBlock = null;
         this.socket.disconnect();
+        this.savedRequests = [];
+    }
+
+    get lastBlockNum(): number {
+        return this.lastReceivedBlock;
     }
 
     /**
@@ -67,6 +93,12 @@ export class HyperionSocketClient {
             this.socketURL = endpoint;
         } else {
             console.error('URL not informed');
+        }
+    }
+
+    pushToBuffer(task) {
+        if (this.options.libStream) {
+            this.reversibleBuffer.push(task);
         }
     }
 
@@ -82,30 +114,55 @@ export class HyperionSocketClient {
     connect(callback?: () => void) {
 
         // setup incoming queue
-        if (this.onData) {
-            this.dataQueue = queue((task: IncomingData, callback) => {
+        this.dataQueue = queue((task: IncomingData, callback) => {
+            task.irreversible = false;
+            if (this.onData) {
                 if (this.options.async) {
+                    this.pushToBuffer(task);
                     this.onData(task, () => {
                         callback();
                     });
                 } else {
                     this.onData(task);
+                    this.pushToBuffer(task);
+                    callback();
+                }
+            } else {
+                this.pushToBuffer(task);
+                callback();
+            }
+        }, 1);
+
+        // assign an error callback
+        this.dataQueue.error(function (err) {
+            if (err) {
+                console.error('task experienced an error');
+            }
+        });
+
+        this.dataQueue.drain(function () {
+            // console.log('all items have been processed');
+        });
+
+        this.dataQueue.empty(this.onEmpty);
+
+        // irreversible queue
+        if (this.options.libStream) {
+            this.libDataQueue = queue((task: IncomingData, callback) => {
+                task.irreversible = true;
+                if (this.onLibData) {
+                    if (this.options.async) {
+                        this.onLibData(task, () => {
+                            callback();
+                        });
+                    } else {
+                        this.onLibData(task);
+                        callback();
+                    }
+                } else {
                     callback();
                 }
             }, 1);
-
-            // assign an error callback
-            this.dataQueue.error(function (err) {
-                if (err) {
-                    console.error('task experienced an error');
-                }
-            });
-
-            this.dataQueue.drain(function () {
-                // console.log('all items have been processed');
-            });
-
-            this.dataQueue.empty(this.onEmpty);
         }
 
         if (!this.socketURL) {
@@ -131,8 +188,27 @@ export class HyperionSocketClient {
         });
 
         this.socket.on('lib_update', (msg) => {
+
+            if (this.options.libStream) {
+                while (this.reversibleBuffer.length > 0) {
+                    if (this.reversibleBuffer[0].content.block_num <= msg.block_num) {
+                        this.libDataQueue.push(this.reversibleBuffer.shift());
+                    } else {
+                        break;
+                    }
+                }
+            }
+
             if (this.onLIB) {
                 this.onLIB(msg);
+            }
+
+            for (const request of this.savedRequests) {
+                if (request.req.read_until && request.req.read_until !== 0) {
+                    if (request.req.read_until < msg.block_num) {
+                        this.disconnect();
+                    }
+                }
             }
         });
 
@@ -143,7 +219,7 @@ export class HyperionSocketClient {
         });
 
         this.socket.on('message', (msg: any) => {
-            if (this.onData && (msg.message || msg['messages'])) {
+            if ((this.onData || this.onLibData) && (msg.message || msg['messages'])) {
                 switch (msg.type) {
                     case 'delta_trace': {
                         if (msg['messages']) {
@@ -237,22 +313,22 @@ export class HyperionSocketClient {
         this.lastReceivedBlock = delta['block_num'];
     }
 
-    resendRequests() {
-        console.log('RESENDING SAVED REQUESTS');
+    async resendRequests() {
+        console.log('resending saved requests');
         const savedReqs = [...this.savedRequests];
         this.savedRequests = [];
-        savedReqs.forEach(r => {
+        for (const r of savedReqs) {
             switch (r.type) {
                 case 'action': {
-                    this.streamActions(r.req);
+                    await this.streamActions(r.req as StreamActionsRequest);
                     break;
                 }
                 case 'delta': {
-                    this.streamDeltas(r.req);
+                    await this.streamDeltas(r.req as StreamDeltasRequest);
                     break;
                 }
             }
-        });
+        }
     }
 
     /**
@@ -277,15 +353,25 @@ export class HyperionSocketClient {
      * Send a request for a filtered action traces stream
      * @param {StreamActionsRequest} request - Action Request Options
      */
-    streamActions(request: StreamActionsRequest) {
+    async streamActions(request: StreamActionsRequest): Promise<any> {
         if (this.socket.connected) {
-            this.checkLastBlock(request);
-            this.socket.emit('action_stream_request', request, (response) => {
-                console.log('action stream response:', response);
-            });
-            this.savedRequests.push({
-                type: 'action',
-                req: request
+            try {
+                await this.checkLastBlock(request);
+            } catch (e) {
+                return {status: 'ERROR', error: e.message};
+            }
+            return new Promise((resolve, reject) => {
+                this.socket.emit('action_stream_request', request, (response) => {
+                    if (response.status === 'OK') {
+                        this.savedRequests.push({
+                            type: 'action',
+                            req: request
+                        });
+                        resolve(response);
+                    } else {
+                        reject(response);
+                    }
+                });
             });
         }
     }
@@ -305,21 +391,59 @@ export class HyperionSocketClient {
      * Send a request for a filtered delta traces stream
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    streamDeltas(request: StreamDeltasRequest) {
+    async streamDeltas(request: StreamDeltasRequest): Promise<any> {
         if (this.socket.connected) {
-            this.checkLastBlock(request);
-            this.socket.emit('delta_stream_request', request, (response) => {
-                console.log('delta stream response:', response);
-            });
-            this.savedRequests.push({
-                type: 'delta',
-                req: request
+            try {
+                await this.checkLastBlock(request);
+            } catch (e) {
+                return {status: 'ERROR', error: e.message};
+            }
+            return new Promise((resolve, reject) => {
+                this.socket.emit('delta_stream_request', request, (response) => {
+                    if (response.status === 'OK') {
+                        this.savedRequests.push({
+                            type: 'delta',
+                            req: request
+                        });
+                        resolve(response);
+                    } else {
+                        reject(response);
+                    }
+                });
             });
         }
     }
 
-    checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest) {
-        if (request.start_from !== 0 && this.lastReceivedBlock) {
+
+    async checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest) {
+        if (request.start_from === 'LIB') {
+            // check current LIB from get_info
+            let url;
+            url = this.options.chainApi ? this.options.chainApi : this.socketURL;
+            url += '/v1/chain/get_info';
+            let valid;
+            let error;
+            try {
+                const json = await fetch(url).then(res => res.json()).catch(reason => {
+                    error = reason.message;
+                });
+                if (json) {
+                    if (json['last_irreversible_block_num']) {
+                        request.start_from = json['last_irreversible_block_num'];
+                        console.log(`Requesting history stream starting at lib (block ${request.start_from})`);
+                        valid = true;
+                    } else {
+                        valid = false;
+                    }
+                }
+            } catch (e) {
+                throw new Error(`get_info failed on: ${url} | error: ${e.message}`);
+            }
+
+            if (!valid) {
+                throw new Error(`get_info failed on: ${url} | error: ${error}`);
+            }
+        } else if (request.start_from !== 0 && this.lastReceivedBlock) {
             if (request.start_from < this.lastReceivedBlock) {
                 request.start_from = this.lastReceivedBlock;
             }
