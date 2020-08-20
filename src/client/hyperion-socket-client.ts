@@ -65,9 +65,9 @@ export class HyperionSocketClient {
             }
         }
         if (typeof fetch !== 'function' && this.options.fetch) {
-            this.localFetch = this.options.fetch;
+            globalThis.fetch = this.options.fetch;
         } else if (window && window.fetch) {
-            this.localFetch = window.fetch;
+            globalThis.fetch = window.fetch;
         } else {
             throw new Error('No fetch support!');
         }
@@ -454,7 +454,7 @@ export class HyperionSocketClient {
             url = this.options.chainApi ? this.options.chainApi : this.socketURL;
             url += '/v1/chain/get_info';
             try {
-                const json = await this.localFetch(url).then(res => res.json()).catch(reason => {
+                const json = await globalThis.fetch(url).then(res => res.json()).catch(reason => {
                     error = reason.message;
                 });
                 if (json) {
