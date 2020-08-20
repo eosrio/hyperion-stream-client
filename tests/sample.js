@@ -1,16 +1,18 @@
 const HyperionSocketClient = require('../lib/index').default;
 
 const client = new HyperionSocketClient('https://wax.eosrio.io', {
-  async: true,
-  libStream: true, // new parameter to allow a stream based on irreversible data
-  chainApi: 'https://wax.eosrio.io', // must be defined if the main hyperion api doesn't forward v1/chain/get_info
+  async: true, // data transport mode
+  libStream: true, // new parameter to allow a stream based on irreversible data, normal head stream its always enabled
+  chainApi: 'https://wax.eosrio.io', // must be defined if the main hyperion api doesn't forward v1/chain/get_info,
+  fetch: require('node-fetch'), // polyfill to fetch is required to run on Nodejs, if omitted on the browser window.fetch will be used
 });
 
 client.onLIB = (libData) => {
   console.log('Current LIB:', libData.block_num);
+  console.log(client.lastBlockNum);
 };
 
-const handler = async (data, ack) => {
+const handler = (data, ack) => {
   const content = data.content;
   if (data.type === 'action') {
     const act = data.content['act'];
@@ -39,12 +41,14 @@ const handler = async (data, ack) => {
   ack();
 };
 
+// attaching the handler to either queues
+
 // client.onLibData = handler;
 client.onData = handler;
 
-// client.onEmpty = async () => {
-//     console.log(`Number of messages received: ${messages}`);
-// };
+client.onEmpty = () => {
+  console.log(`All messaged were processed!`);
+};
 
 client.onConnect = async () => {
 

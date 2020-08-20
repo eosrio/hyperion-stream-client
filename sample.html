@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hyperion Stream Example</title>
-    <script src="https://wax.hyperion.eosrio.io/stream-client.js"></script>
+    <script src="dist/bundle.js"></script>
     <link href="https://fonts.googleapis.com/css?family=Open+Sans&display=swap" rel="stylesheet">
 </head>
 <body style="font-family: 'Open Sans', sans-serif;">
@@ -33,7 +33,7 @@
 <div id="action"></div>
 <div id="actionData"></div>
 <script>
-  const client = new HyperionSocketClient('https://wax.hyperion.eosrio.io', {async: true});
+  const client = new HyperionSocketClient('https://wax.eosrio.io', {async: true});
   let isConnected = false;
   client.onData = async (data, ack) => {
     const content = data.content;

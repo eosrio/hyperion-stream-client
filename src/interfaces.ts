@@ -5,8 +5,9 @@ export interface SavedRequest {
 
 
 export interface HyperionClientOptions {
-    async: boolean;
-    libStream: boolean;
+    fetch?: any;
+    async?: boolean;
+    libStream?: boolean;
     chainApi?: string;
 }
 

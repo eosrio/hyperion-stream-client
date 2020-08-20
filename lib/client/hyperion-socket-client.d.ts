@@ -1,4 +1,4 @@
-import { ForkData, HyperionClientOptions, IncomingData, LIBData, StreamActionsRequest, StreamDeltasRequest } from "../interfaces";
+import { ForkData, HyperionClientOptions, IncomingData, LIBData, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "../interfaces";
 export declare class HyperionSocketClient {
     private socket;
     private socketURL;
@@ -14,7 +14,8 @@ export declare class HyperionSocketClient {
     onFork: (data: ForkData) => void;
     onEmpty: () => void;
     online: boolean;
-    private savedRequests;
+    savedRequests: SavedRequest[];
+    private localFetch;
     /**
      * @typedef {object} BaseOptions
      * @property {boolean} async - Enable Asynchronous Mode
@@ -26,7 +27,7 @@ export declare class HyperionSocketClient {
      * @param {string} endpoint - Hyperion API Endpoint (ex. https://api.eosrio.io)
      * @param {HyperionClientOptions} opts - Client Options
      */
-    constructor(endpoint: string, opts: HyperionClientOptions);
+    constructor(endpoint: string, opts?: HyperionClientOptions);
     /**
      * Disconnects from the API
      * @example
@@ -34,13 +35,16 @@ export declare class HyperionSocketClient {
      *     disconnect()
      */
     disconnect(): void;
+    /**
+     * Get the last block number received
+     */
     get lastBlockNum(): number;
     /**
      *
      * @param endpoint - Hyperion API Endpoint
      */
     setEndpoint(endpoint: string): void;
-    pushToBuffer(task: any): void;
+    private pushToBuffer;
     /**
      * Start session. Action handlers should be defined before this method is called
      * @param {function} [callback] - function to execute on a successful connection
@@ -51,8 +55,23 @@ export declare class HyperionSocketClient {
      * });
      */
     connect(callback?: () => void): void;
-    processActionTrace(action: any, mode: any): void;
-    processDeltaTrace(delta: any, mode: any): void;
+    /**
+     * Internal method to parse an action streaming trace
+     * @param action
+     * @param mode
+     * @private
+     */
+    private processActionTrace;
+    /**
+     * Internal method to parse a delta streaming trace
+     * @param delta
+     * @param mode
+     * @private
+     */
+    private processDeltaTrace;
+    /**
+     * Replay cached requests
+     */
     resendRequests(): Promise<void>;
     /**
      * Request filter definition
@@ -90,5 +109,9 @@ export declare class HyperionSocketClient {
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
     streamDeltas(request: StreamDeltasRequest): Promise<any>;
-    checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest): Promise<void>;
+    /**
+     * Check if the start_from value should be updated or not
+     * @param request - Request object to verify
+     */
+    private checkLastBlock;
 }

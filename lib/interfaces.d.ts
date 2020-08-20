@@ -3,8 +3,9 @@ export interface SavedRequest {
     req: StreamActionsRequest | StreamDeltasRequest;
 }
 export interface HyperionClientOptions {
-    async: boolean;
-    libStream: boolean;
+    fetch?: any;
+    async?: boolean;
+    libStream?: boolean;
     chainApi?: string;
 }
 export interface StreamDeltasRequest {
