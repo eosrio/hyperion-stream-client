@@ -64,9 +64,10 @@ export class HyperionSocketClient {
                 this.options.chainApi = trimTrailingSlash(this.options.chainApi);
             }
         }
-        if (typeof fetch !== 'function' && this.options.fetch) {
+
+        if (this.options.fetch) {
             globalThis.fetch = this.options.fetch;
-        } else if (window && window.fetch) {
+        } else if (typeof window !== 'undefined') {
             globalThis.fetch = window.fetch;
         } else {
             throw new Error('No fetch support!');
