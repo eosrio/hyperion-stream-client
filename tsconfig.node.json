@@ -1,13 +1,13 @@
 {
   "compilerOptions": {
-    "module": "ES2020",
-    "target": "ES2020",
+    "module": "commonjs",
+    "target": "es2020",
     "esModuleInterop": true,
     "sourceMap": true,
     "resolveJsonModule": false,
     "moduleResolution": "node",
     "declaration": true,
-    "outDir": "lib/esm",
+    "outDir": "lib/cjs",
     "lib": [
       "ES2019",
       "ES2020"

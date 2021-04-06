@@ -13,7 +13,7 @@ npm install @eosrio/hyperion-stream-client --save
 
 Import the client
 ```
-const HyperionSocketClient = require('@eosrio/hyperion-stream-client').default;
+const HyperionStreamClient = require('@eosrio/hyperion-stream-client').default;
 ```
 
 #### Browser library
@@ -29,12 +29,12 @@ For other usages the bundle is also available at `dist/bundle.js`
 Setup the endpoint that you want to fetch data from and the flow control mode:
 
 ```javascript
-const client = new HyperionSocketClient(ENDPOINT, {async: false});
+const client = new HyperionStreamClient(ENDPOINT, {async: false});
 ```
 
 Example:
 ```javascript
-const client = new HyperionSocketClient('https://example.com', {async: false});
+const client = new HyperionStreamClient('https://example.com', {async: false});
 ```
 
 `https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
@@ -66,8 +66,8 @@ to ensure the client is connected, requests should be defined on the `client.onC
 - Date format (ISO 8601) - e.g. 2020-01-01T00:00:00.000Z
 
 ```javascript
-const HyperionSocketClient = require('@eosrio/hyperion-stream-client').default;
-const client = new HyperionSocketClient('http://localhost:7000', {async: true});
+const HyperionStreamClient = require('@eosrio/hyperion-stream-client').default;
+const client = new HyperionStreamClient('http://localhost:7000', {async: true});
 
 client.onConnect = () => {
   client.streamActions({

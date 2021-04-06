@@ -1,21 +1,20 @@
 import { ForkData, HyperionClientOptions, IncomingData, LIBData, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "../interfaces";
-export declare class HyperionSocketClient {
-    private socket;
-    private socketURL;
+export declare class HyperionStreamClient {
+    private socket?;
+    private socketURL?;
     private lastReceivedBlock;
     private dataQueue;
-    private libDataQueue;
     private options;
+    private libDataQueue;
     private reversibleBuffer;
-    onConnect: () => void;
-    onData: (data: IncomingData, ack?: () => void) => void;
-    onLibData: (data: IncomingData, ack?: () => void) => void;
-    onLIB: (data: LIBData) => void;
-    onFork: (data: ForkData) => void;
-    onEmpty: () => void;
+    onConnect?: () => void;
+    onData?: (data: IncomingData, ack?: () => void) => void;
+    onLibData?: (data: IncomingData, ack?: () => void) => void;
+    onLIB?: (data: LIBData) => void;
+    onFork?: (data: ForkData) => void;
+    onEmpty?: () => void;
     online: boolean;
     savedRequests: SavedRequest[];
-    private localFetch;
     /**
      * @typedef {object} BaseOptions
      * @property {boolean} async - Enable Asynchronous Mode

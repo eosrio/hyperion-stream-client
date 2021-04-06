@@ -1,4 +1,10 @@
-import {HyperionSocketClient} from './client/hyperion-socket-client';
+import {HyperionStreamClient} from "./client/hyperion-stream-client";
+
+if (typeof window !== 'undefined') {
+	// @ts-ignore
+	window['HyperionStreamClient'] = HyperionStreamClient;
+}
 
 export * from './interfaces';
-export default HyperionSocketClient;
+export * from './client/hyperion-stream-client';
+export default HyperionStreamClient;

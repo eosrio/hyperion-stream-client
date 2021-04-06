@@ -1,12 +1,14 @@
+// noinspection WebpackConfigHighlighting
+
 const path = require('path');
 
 module.exports = {
-  entry: './src/client.ts',
+  entry: './src/index.ts',
   mode: 'production',
   module: {
     rules: [
       {
-        test: /\.tsx?$/,
+        test: /\.ts?$/,
         use: 'ts-loader',
         exclude: /node_modules/,
       },
@@ -16,7 +18,8 @@ module.exports = {
     extensions: ['.ts', '.js'],
   },
   output: {
-    filename: 'bundle.js',
+    filename: 'hyperion-stream-client.js',
+    libraryTarget: 'umd',
     path: path.resolve(__dirname, 'dist'),
   },
 };

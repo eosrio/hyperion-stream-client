@@ -54,13 +54,16 @@ export interface ActionContent {
     trx_id: string;
     producer: string;
     notified: string;
+    [key: string]: any;
 }
 export interface DeltaContent {
     code: string;
     table: string;
     scope: string;
     payer: string;
+    block_num: number;
     data: any;
+    [key: string]: any;
 }
 export interface IncomingData {
     type: "action" | "delta";
