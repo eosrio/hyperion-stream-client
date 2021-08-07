@@ -29,8 +29,9 @@ For other usages the bundle is also available at `dist/bundle.js`
 Setup the endpoint that you want to fetch data from and the flow control mode:
 
 ```javascript
-const client = new HyperionStreamClient(ENDPOINT, {async: false});
+const client = new HyperionStreamClient(ENDPOINT, HYPERION_CLIENT_OPTIONS);
 ```
+**HYPERION_CLIENT_OPTIONS** can be found in `src/interfaces.ts`
 
 Example:
 ```javascript
