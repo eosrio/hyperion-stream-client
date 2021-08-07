@@ -35,6 +35,10 @@ const client = new HyperionStreamClient(ENDPOINT, {async: false});
 Example:
 ```javascript
 const client = new HyperionStreamClient('https://example.com', {async: false});
+
+// NodeJS
+const fetch = require("node-fetch");
+const client = new HyperionStreamClient('https://example.com', {async: false, fetch: fetch});
 ```
 
 `https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
