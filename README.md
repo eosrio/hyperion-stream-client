@@ -29,12 +29,17 @@ For other usages the bundle is also available at `dist/bundle.js`
 Setup the endpoint that you want to fetch data from and the flow control mode:
 
 ```javascript
-const client = new HyperionStreamClient(ENDPOINT, {async: false});
+const client = new HyperionStreamClient(ENDPOINT, HYPERION_CLIENT_OPTIONS);
 ```
+**HYPERION_CLIENT_OPTIONS** can be found in `src/interfaces.ts`
 
 Example:
 ```javascript
 const client = new HyperionStreamClient('https://example.com', {async: false});
+
+// NodeJS
+const fetch = require("node-fetch");
+const client = new HyperionStreamClient('https://example.com', {async: false, fetch: fetch});
 ```
 
 `https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
