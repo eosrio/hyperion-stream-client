@@ -1,4 +1,4 @@
-const HyperionSocketClient = require('../lib/index').default;
+const HyperionSocketClient = require('../lib/cjs/index').default;
 
 const client = new HyperionSocketClient('https://wax.eosrio.io', {
   async: true, // data transport mode
