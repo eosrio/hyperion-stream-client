@@ -1,16 +1,15 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2020",
+    "allowJs": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": "src",
+    "declaration": true,
     "esModuleInterop": true,
     "sourceMap": true,
-    "resolveJsonModule": false,
-    "moduleResolution": "node",
-    "declaration": true,
-    "outDir": "lib/cjs",
     "lib": [
       "ES2019",
-      "ES2020"
+      "ES2020",
+      "esnext"
     ],
     "newLine": "lf",
     "stripInternal": true,
@@ -22,13 +21,10 @@
     "noUncheckedIndexedAccess": true,
     "noEmitOnError": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
-  "include": [
-    "src"
-  ],
-  "exclude": [
-    "node_modules",
-    "lib"
-  ]
+  "compileOnSave": false,
+  "exclude": ["node_modules", "dist", "lib"],
+  "include": ["src"]
 }

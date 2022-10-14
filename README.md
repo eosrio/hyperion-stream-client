@@ -165,3 +165,5 @@ client.onData = async (data) => {
     //code here
 }
 ```
+
+https://socket.io/docs/v3/using-multiple-nodes/#NginX-configuration

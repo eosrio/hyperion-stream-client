@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hyperion Stream Example</title>
+    <script src="../dist/hyperion-stream-client.js"></script>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Open Sans', sans-serif;
+        }
+
+        input {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+<h2>Hyperion Stream Demo</h2>
+<div>
+    <span>Status: <strong id="status">disconnected</strong></span>
+</div>
+<br>
+<table style="text-align: left; border-spacing: 5px; width: 100%">
+    <tr>
+        <th><span>Hyperion URL:</span></th>
+        <th><input id="serverUrl" value="https://sidechain.node.tibs.app"></th>
+    </tr>
+    <tr>
+        <th><span>Filter Contract: </span></th>
+        <th><input id="contract" value="tibs"></th>
+    </tr>
+    <tr>
+        <th><span>Filter Action: </span></th>
+        <th><input id="name" placeholder="Action" value="mintasset"></th>
+    </tr>
+    <tr>
+        <th><span>Notified Account: </span></th>
+        <th><input id="account" placeholder="Account"></th>
+    </tr>
+</table>
+<button onclick="connect()">Connect</button>
+<button onclick="disconnect()">Disconnect</button>
+<br>
+<h3>Latest Action</h3>
+<div id="action"></div>
+<div id="actionData"></div>
+<script>
+    const client = new HyperionStreamClient('https://sidechain.node.tibs.app', {
+        async: true,
+        libStream: false,
+        debug: true
+    });
+    let isConnected = false;
+
+    const handler = (data, ack) => {
+        const content = data.content;
+        if (data.type === 'action') {
+            const act = data.content['act'];
+            console.log('ACTION ->', data);
+            document.getElementById('action').innerHTML = `
+<strong>${content['@timestamp']}</strong><br>
+<strong>Current Block: ${content['block_num']} | Producer: ${content['producer']}</strong><br>
+<strong>TX: ${content['trx_id']}</strong><br>
+<strong>${act.account}::${act.name}</strong><br>
+<small>CPU: ${content['cpu_usage_us']} us</small><br>
+<small>NET: ${content['net_usage_words']} bytes</small><br>
+`;
+            let list = '<div>';
+            for (const key in act.data) {
+                if (act.data.hasOwnProperty(key)) {
+                    list += `<p>${key} = ${act.data[key]}</p>`;
+                }
+            }
+            list += '</div>';
+            document.getElementById('actionData').innerHTML = list;
+        }
+        ack();
+    };
+
+    client.onData = handler;
+
+    client.onLIB = (libData) => {
+        console.log('LIB ->', libData);
+        console.log(client.lastBlockNum);
+    };
+
+    client.onConnect = () => {
+        client.streamActions({
+            contract: document.getElementById('contract').value,
+            action: document.getElementById('name').value,
+            account: document.getElementById('account').value,
+            start_from: 'lib',
+            read_until: 0,
+            filters: [],
+        });
+    };
+
+    function connect() {
+        if (!isConnected) {
+            client.socketURL = document.getElementById('serverUrl').value
+            client.connect(() => {
+                isConnected = true;
+                document.getElementById('status').innerText = 'connected';
+                console.log('connected!');
+                document.getElementById('action').innerText = 'waiting for action...';
+            });
+        }
+    }
+
+    function disconnect() {
+        client.disconnect();
+        document.getElementById('status').innerText = 'disconnected';
+        isConnected = false;
+    }
+
+</script>
+</body>
+</html>

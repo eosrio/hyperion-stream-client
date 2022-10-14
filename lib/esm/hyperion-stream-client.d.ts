@@ -1,5 +1,7 @@
-import { ForkData, HyperionClientOptions, IncomingData, LIBData, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "../interfaces";
-export declare class HyperionStreamClient {
+/// <reference types="node" />
+import EventEmitter from "node:events";
+import { ForkData, HyperionClientOptions, IncomingData, LIBData, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "./interfaces";
+export declare class HyperionStreamClient extends EventEmitter {
     private socket?;
     private socketURL?;
     private lastReceivedBlock;
@@ -10,23 +12,22 @@ export declare class HyperionStreamClient {
     onConnect?: () => void;
     onData?: (data: IncomingData, ack?: () => void) => void;
     onLibData?: (data: IncomingData, ack?: () => void) => void;
-    onLIB?: (data: LIBData) => void;
+    onLIB: (data: LIBData) => void;
     onFork?: (data: ForkData) => void;
     onEmpty?: () => void;
     online: boolean;
     savedRequests: SavedRequest[];
     /**
      * @typedef {object} BaseOptions
+     * @property {string} endpoint - Hyperion API Endpoint
      * @property {boolean} async - Enable Asynchronous Mode
      * @property {boolean} lib_stream - Enable onLibData handler
      */
     /**
      * Construct a new streaming client
-     *
-     * @param {string} endpoint - Hyperion API Endpoint (ex. https://api.eosrio.io)
-     * @param {HyperionClientOptions} opts - Client Options
+     * @param {HyperionClientOptions} options - Client Options
      */
-    constructor(endpoint: string, opts?: HyperionClientOptions);
+    constructor(options: HyperionClientOptions & Record<string, any>);
     /**
      * Disconnects from the API
      * @example
@@ -44,6 +45,10 @@ export declare class HyperionStreamClient {
      */
     setEndpoint(endpoint: string): void;
     private pushToBuffer;
+    private setupIncomingQueue;
+    private setupIrreversibleQueue;
+    private handleLibUpdate;
+    private setupSocket;
     /**
      * Start session. Action handlers should be defined before this method is called
      * @param {function} [callback] - function to execute on a successful connection
@@ -53,7 +58,7 @@ export declare class HyperionStreamClient {
      *     console.log('Connection was successful!');
      * });
      */
-    connect(callback?: () => void): void;
+    connect(callback?: () => void): Promise<void>;
     /**
      * Internal method to parse an action streaming trace
      * @param action
@@ -113,4 +118,5 @@ export declare class HyperionStreamClient {
      * @param request - Request object to verify
      */
     private checkLastBlock;
+    private debugLog;
 }
