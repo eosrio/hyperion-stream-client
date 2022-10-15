@@ -2,110 +2,126 @@
 
 Streaming Client for Hyperion History API (v3+)
 
-### Supported Environments
- - Node.js v16 and up
-   - ES Module
-   - CommonJS
- - Browsers
-   - ES Module
-   - UMD
-
 ### Usage
 
-We currently provide libraries for nodejs and prebuilt browser bundle
+#### Supported Environments
 
-#### npm package
+- Node.js v16 and up
+  - ES Module
+  - CommonJS
+- Browsers
+  - ES Module - Angular, React and other frameworks
+  - UMD
+
+#### Installing via npm package
+
 ```
 npm install @eosrio/hyperion-stream-client --save
 ```
 
-Import the client
+#### Import the client
+
 ```
-const HyperionStreamClient = require('@eosrio/hyperion-stream-client').default;
+import {HyperionStreamClient} from "@eosrio/hyperion-stream-client";
 ```
 
-#### Browser library
+```
+const {HyperionStreamClient} = require('@eosrio/hyperion-stream-client');
+```
+
+#### Browser library (served from public Hyperion APIs)
+
 ```
 <script src="https://<ENDPOINT>/stream-client.js"></script>
 ```
-Where `<ENDPOINT>` is the Hyperion API (e.g. `https://wax.hyperion.eosrio.io`)
 
-For other usages the bundle is also available at `dist/bundle.js`
+Where `<ENDPOINT>` is the Hyperion API (e.g. `https://eos.hyperion.eosrio.io`)
+
+For other usages the bundle is also available at `dist/hyperion-stream-client.js`
 
 ### 1. Connection
 
 Setup the endpoint that you want to fetch data from and the flow control mode:
 
 ```javascript
-const client = new HyperionStreamClient(ENDPOINT, {async: false});
-```
-
-Example:
-```javascript
-const client = new HyperionStreamClient('https://example.com', {async: false});
+const client = new HyperionStreamClient({
+    endpoint: 'https://example.com',
+    debug: true,
+    libStream: false
+});
 ```
 
 `https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
 
-Flow control mode:
-
-- Async: **true** - The transmission will be asynchronous and you need an acknowledge function. Incoming data will be held on a local queue until ack is called.
-- Async: **false** - The transmission will be synchronous. The acknowledge function is not needed.
-
 ### 2. Requests
 
- - `client.streamActions(request: StreamActionsRequest): void` -- Request action stream
- - `client.streamDeltas(request: StreamDeltasRequest): void` -- Request delta stream (contract rows)
- 
-to ensure the client is connected, requests should be defined on the `client.onConnect` property, refer to examples below;
+- `client.streamActions(request: StreamActionsRequest): void` -- Request action stream
+- `client.streamDeltas(request: StreamDeltasRequest): void` -- Request delta stream (contract rows)
+
+to ensure the client is connected, requests should be defined on the `client.onConnect` property, refer to examples
+below;
 
 #### 2.1 Action Stream - client.streamActions
 
- - `contract` - contract account
- - `action` - action name
- - `account` - notified account name
- - `start_from` - start reading on block or on a specific date: (0=disabled)
- - `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
- - `filters` - actions filter (more details below)
+- `contract` - contract account
+- `action` - action name
+- `account` - notified account name
+- `start_from` - start reading on block or on a specific date: (0=disabled)
+- `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
+- `filters` - actions filter (more details below)
 
 **Notes**
+
 - Block number can be either positive or negative - E.g.: -15000, 700
 - In case of negative block number, it will be subtracted from the HEAD
 - Date format (ISO 8601) - e.g. 2020-01-01T00:00:00.000Z
 
-```javascript
-const HyperionStreamClient = require('@eosrio/hyperion-stream-client').default;
-const client = new HyperionStreamClient('http://localhost:7000', {async: true});
+```typescript
+import {HyperionStreamClient, StreamClientEvents} from "@eosrio/hyperion-stream-client";
 
-client.onConnect = () => {
-  client.streamActions({
-    contract: 'eosio',
-    action: 'voteproducer',
-    account: '',
-    start_from: '2020-03-15T00:00:00.000Z',
-    read_until: 0,
-    filters: [],
-  });
-}
-
-// see 3 for handling data
-client.onData = async (data, ack) => {
-    console.log(data); // process incoming data, replace with your code
-    ack(); // ACK when done
-}
-
-client.connect(() => {
-  console.log('connected!');
+const client = new HyperionStreamClient({
+    endpoint: "https://sidechain.node.tibs.app",
+    debug: true,
+    libStream: false
 });
+
+client.on(StreamClientEvents.LIBUPDATE, (data: EventData) => {
+    console.log(data);
+});
+
+client.on('connect', () => {
+    client.streamActions({
+        contract: 'eosio',
+        action: 'voteproducer',
+        account: '',
+        start_from: '2020-03-15T00:00:00.000Z',
+        read_until: 0,
+        filters: [],
+    });
+});
+
+client.setAsyncDataHandler(async (data) => {
+    console.log(data);
+    // process incoming data, replace with your code
+    // await processSomethingHere();
+})
+
+await client.connect();
+
+console.log('connected!');
 ```
 
 #### 2.1.1 Act Data Filters
-You can setup filters to refine your stream. Filters should use fields following the Hyperion Action Data Structure, such as:
 
- - `act.data.producers` (on eosio::voteproducer)
- - `@transfer.to` (here the @ prefix is required since transfers have special mappings)
- 
- please refer to the [mapping definitions](https://github.com/eosrio/Hyperion-History-API/blob/develop/definitions/index-templates.ts) to know which data fields are available
+You can set up filters to refine your stream. Filters should use fields following the Hyperion Action Data Structure,
+such as:
+
+- `act.data.producers` (on eosio::voteproducer)
+- `@transfer.to` (here the @ prefix is required since transfers have special mappings)
+
+please refer to
+the [mapping definitions](https://github.com/eosrio/Hyperion-History-API/blob/develop/definitions/index-templates.ts) to
+know which data fields are available
 
 For example, to filter the stream for
 every transfer made to the `eosio.ramfee` account:
@@ -128,50 +144,50 @@ will result in an AND operation, currently it's not possible to make OR operatio
 
 #### 2.2 Delta Stream - client.streamDeltas
 
- - `code` - contract account
- - `table` - table name
- - `scope` - table scope
- - `payer` - ram payer
- - `start_from` - start reading on block or on a specific date: (0=disabled)
- - `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
+- `code` - contract account
+- `table` - table name
+- `scope` - table scope
+- `payer` - ram payer
+- `start_from` - start reading on block or on a specific date: (0=disabled)
+- `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
 
 Example:
 
 Referring to the same pattern as the action stream example above, one could also include a delta stream request
+
 ```javascript
 client.streamDeltas({
-  code: 'eosio.token',
-  table: '*',
-  scope: '',
-  payer: '',
-  start_from: 0,
-  read_until: 0,
+    code: 'eosio.token',
+    table: '*',
+    scope: '',
+    payer: '',
+    start_from: 0,
+    read_until: 0,
 });
 ``` 
 
- _Note: Delta filters are planned to be implemented soon._
+_Note: Delta filters are planned to be implemented soon._
 
 #### 3. Handling Data
 
-Incoming data is handled via the `client.onData` callback
+Incoming data handler is defined via the `client.setAsyncDataHandler(async (data)=> void)` method
 
 data object is structured as follows:
- - type - _action_ | _delta_
- - mode - _live_ | _history_
- - content - Hyperion Data Structure (see [action index](https://github.com/eosrio/Hyperion-History-API/blob/develop/definitions/index-templates.ts#L40) template)
- 
+
+- type - _action_ | _delta_
+- mode - _live_ | _history_
+- content - Hyperion Data Structure (
+  see [action index](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts#L53)
+  and [delta index](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts#L212)
+  templates)
+
 ```javascript
-client.onData = async (data, ack) => {
-    console.log(data); // process incoming data, replace with your code
-    ack(); // ACK when done
-}
+client.setAsyncDataHandler(async (data) => {
+    console.log(data);
+    // process incoming data, replace with your code
+    // await processSomethingHere();
+})
 ```
 
-If you set `async: false` on the connection step, the `ack` must not be used:
-```javascript
-client.onData = async (data) => {
-    //code here
-}
-```
-
-https://socket.io/docs/v3/using-multiple-nodes/#NginX-configuration
+Useful information about load-balancing multiple Socket.IO servers:
+https://socket.io/docs/v4/using-multiple-nodes/#NginX-configuration
