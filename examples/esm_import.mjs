@@ -11,13 +11,13 @@ async function handler(data) {
             const action = data.content;
             const act = action.act;
             const actData = act.data;
-            console.log(`Action - [${act.account}::${act.name}] >> ${JSON.stringify(actData)}`);
+            console.log(`Action - [${data.content.block_num}] [${act.account}::${act.name}] >> ${JSON.stringify(actData)}`);
             break;
         }
         case 'delta': {
             const delta = data.content;
             const row = delta.data;
-            console.log(`Delta -  [${delta.code}::${delta.table}] >> ${JSON.stringify(row)}`);
+            console.log(`Delta - [${data.content.block_num}] [${delta.code}::${delta.table}] >> ${JSON.stringify(row)}`);
             break;
         }
     }
@@ -45,7 +45,7 @@ await client.streamActions({
     account: '',
     filters: [],
     read_until: 0,
-    start_from: 594621
+    start_from: 669080
 });
 
 await client.streamActions({
@@ -54,7 +54,7 @@ await client.streamActions({
     account: '',
     filters: [],
     read_until: 0,
-    start_from: 594621
+    start_from: 669080
 });
 
 await client.streamDeltas({
@@ -63,7 +63,7 @@ await client.streamDeltas({
     table: '*',
     payer: '',
     read_until: 0,
-    start_from: 594621
+    start_from: 669080
 });
 
 await client.streamDeltas({
@@ -72,5 +72,5 @@ await client.streamDeltas({
     table: '*',
     payer: '',
     read_until: 0,
-    start_from: 594621
+    start_from: 669080
 });
