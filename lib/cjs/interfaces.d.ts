@@ -2,12 +2,16 @@ export interface SavedRequest {
     type: string;
     req: StreamActionsRequest | StreamDeltasRequest;
 }
+/**
+ * Options used to configure the streaming client
+ * @field {string}
+ */
 export interface HyperionClientOptions {
+    /** Hyperion HTTP API w/ streaming enabled */
     endpoint: string;
-    debug?: boolean;
-    async?: boolean;
-    libStream?: boolean;
     chainApi?: string;
+    debug?: boolean;
+    libStream?: boolean;
 }
 export interface StreamDeltasRequest {
     code: string;
@@ -83,3 +87,6 @@ export interface ForkData {
     ending_block: number;
     new_id: string;
 }
+export declare type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
+export declare type EventData = IncomingData | LIBData | ForkData | void | undefined;
+export declare type EventListener = (data?: EventData) => void;

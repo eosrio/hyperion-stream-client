@@ -1,11 +1,14 @@
-import EventEmitter from "node:events";
+// noinspection JSUnusedGlobalSymbols
+
 import {queue, QueueObject} from "async";
 import {io, Socket} from "socket.io-client";
-import fetch from 'cross-fetch';
 
 import {
     ActionContent,
+    AsyncHandlerFunction,
     DeltaContent,
+    EventData,
+    EventListener,
     ForkData,
     HyperionClientOptions,
     IncomingData,
@@ -15,6 +18,17 @@ import {
     StreamDeltasRequest
 } from "./interfaces";
 
+import fetch from "cross-fetch";
+
+export enum StreamClientEvents {
+    DATA = 'data',
+    LIBUPDATE = 'libUpdate',
+    FORK = 'fork',
+    EMPTY = 'empty',
+    CONNECT = 'connect',
+    DRAIN = 'drain'
+}
+
 function trimTrailingSlash(input: string) {
     if (input.endsWith('/')) {
         return input.slice(0, input.length - 1);
@@ -23,10 +37,7 @@ function trimTrailingSlash(input: string) {
     }
 }
 
-export type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
-export type LibHandlerFunction = (data: LIBData) => void;
-
-export class HyperionStreamClient extends EventEmitter {
+export class HyperionStreamClient {
 
     private socket?: Socket;
     private socketURL?: string;
@@ -44,13 +55,11 @@ export class HyperionStreamClient extends EventEmitter {
     private onDataAsync?: AsyncHandlerFunction;
     private onLibDataAsync?: AsyncHandlerFunction;
 
-    onConnect?: () => void;
-    onLIB?: (data: LIBData) => void;
-    onFork?: (data: ForkData) => void;
-    onEmpty?: () => void;
-
     online: boolean = false;
     savedRequests: SavedRequest[] = [];
+
+    eventListeners: Map<string, EventListener[]> = new Map();
+    tempEventListeners: Map<string, EventListener[]> = new Map();
 
     /**
      * @typedef {object} BaseOptions
@@ -64,7 +73,6 @@ export class HyperionStreamClient extends EventEmitter {
      * @param {HyperionClientOptions} options - Client Options
      */
     constructor(options: HyperionClientOptions & Record<string, any>) {
-        super();
         if (options && typeof options === 'object') {
             for (let optsKey in options) {
                 if (options[optsKey] !== undefined) {
@@ -88,9 +96,6 @@ export class HyperionStreamClient extends EventEmitter {
         } else {
             throw new Error('Invalid options');
         }
-        this.onLIB = (data) => {
-            this.debugLog(`Last Irreversible Block: ${data.block_num}`);
-        };
     }
 
     /**
@@ -138,37 +143,13 @@ export class HyperionStreamClient extends EventEmitter {
         // setup incoming queue
         this.dataQueue = queue((task: IncomingData, taskCallback) => {
             task.irreversible = false;
-
-            // emit event data
-            this.emit('data', {
-                data: task,
-                queueSize: this.dataQueue?.length(),
-                ack: taskCallback
-            });
-
+            this.emit(StreamClientEvents.DATA, task);
             if (this.onDataAsync) {
                 this.pushToBuffer(task);
                 this.onDataAsync(task).then(() => {
                     taskCallback();
                 });
             }
-
-            // // call onData direct handler
-            // if (this.onData) {
-            //     if (this.options.async) {
-            //         this.pushToBuffer(task);
-            //         this.onData(task, () => {
-            //             taskCallback();
-            //         });
-            //     } else {
-            //         this.onData(task);
-            //         this.pushToBuffer(task);
-            //         taskCallback();
-            //     }
-            // } else {
-            //     this.pushToBuffer(task);
-            //     taskCallback();
-            // }
         }, 1);
 
         // assign an error callback
@@ -179,14 +160,11 @@ export class HyperionStreamClient extends EventEmitter {
         });
 
         this.dataQueue.drain(() => {
-            // console.log('all items have been processed');
+            this.emit<void>(StreamClientEvents.DRAIN);
         });
 
         this.dataQueue.empty(() => {
-            this.emit('empty');
-            if (this.onEmpty) {
-                this.onEmpty();
-            }
+            this.emit<void>(StreamClientEvents.EMPTY);
         });
     }
 
@@ -230,10 +208,7 @@ export class HyperionStreamClient extends EventEmitter {
             }
         }
 
-        this.emit('libUpdate', msg);
-        if (this.onLIB) {
-            this.onLIB(msg);
-        }
+        this.emit<LIBData>(StreamClientEvents.LIBUPDATE, msg);
 
         for (const request of this.savedRequests) {
             if (request.req.read_until && request.req.read_until !== 0) {
@@ -256,10 +231,7 @@ export class HyperionStreamClient extends EventEmitter {
                 this.socket.on('connect', () => {
                     this.debugLog('connected');
                     this.online = true;
-                    this.emit('connect');
-                    if (this.onConnect) {
-                        this.onConnect();
-                    }
+                    this.emit<void>(StreamClientEvents.CONNECT);
                     this.resendRequests().catch(console.log);
                     resolve();
                 });
@@ -271,10 +243,7 @@ export class HyperionStreamClient extends EventEmitter {
                 this.socket.on('lib_update', this.handleLibUpdate.bind(this));
 
                 this.socket.on('fork_event', (msg) => {
-                    this.emit('fork', msg);
-                    if (this.onFork) {
-                        this.onFork(msg);
-                    }
+                    this.emit<ForkData>(StreamClientEvents.FORK, msg);
                 });
 
                 this.socket.on('message', (msg: any) => {
@@ -349,7 +318,7 @@ export class HyperionStreamClient extends EventEmitter {
         }
         this.debugLog(`Connecting to ${this.socketURL}...`);
         await this.setupSocket();
-        this.emit('connect');
+        this.emit(StreamClientEvents.CONNECT);
     }
 
     /**
@@ -541,28 +510,21 @@ export class HyperionStreamClient extends EventEmitter {
      */
     private async checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest) {
         if (String(request.start_from).toUpperCase() === 'LIB') {
-            let url, valid, error = '';
+            let url;
             url = this.options.chainApi ? this.options.chainApi : this.socketURL;
             url += '/v1/chain/get_info';
             if (url) {
                 try {
-                    const json = await fetch(url).then(res => res.json()).catch(reason => {
-                        error = reason.message;
-                    });
+                    const getInfoResponse = await fetch(url);
+                    const json = await getInfoResponse.json() as any;
                     if (json) {
                         if (json['last_irreversible_block_num']) {
                             request.start_from = json['last_irreversible_block_num'];
-                            this.debugLog(`Requesting history stream starting at lib (block ${request.start_from})`);
-                            valid = true;
-                        } else {
-                            valid = false;
+                            this.debugLog(`Stream starting at lib (block ${request.start_from})`);
                         }
                     }
                 } catch (e: any) {
                     throw new Error(`get_info failed on: ${url} | error: ${e.message}`);
-                }
-                if (!valid) {
-                    throw new Error(`get_info failed on: ${url} | error: ${error}`);
                 }
             }
         } else if (request.start_from !== 0 && this.lastReceivedBlock) {
@@ -578,15 +540,63 @@ export class HyperionStreamClient extends EventEmitter {
         }
     }
 
-    public setLibHandler(handler: LibHandlerFunction) {
-        this.onLIB = handler;
-    }
-
     public setAsyncDataHandler(handler: AsyncHandlerFunction) {
         this.onDataAsync = handler;
     }
 
     public setAsyncLibDataHandler(handler: AsyncHandlerFunction) {
         this.onLibDataAsync = handler;
+    }
+
+    private emit<T extends EventData>(event: StreamClientEvents | string, data?: T): void {
+        const listeners = this.eventListeners.get(event);
+        if (listeners) {
+            listeners.forEach((l: EventListener) => l(data));
+        }
+
+        const tempListeners = this.tempEventListeners.get(event);
+        if (tempListeners && tempListeners.length > 0) {
+            const listener = tempListeners.shift();
+            if (listener) {
+                listener(data);
+            }
+        }
+    }
+
+    public once(event: StreamClientEvents | string, listener: EventListener): void {
+        if (typeof listener !== 'function') {
+            throw new Error('Event listener must be a function');
+        }
+        if (!this.tempEventListeners.has(event)) {
+            this.tempEventListeners.set(event, [listener]);
+        } else {
+            this.tempEventListeners.get(event)?.push(listener);
+        }
+    }
+
+    public on(event: StreamClientEvents | string, listener: EventListener): void {
+        if (typeof listener !== 'function') {
+            throw new Error('Event listener must be a function');
+        }
+        if (!this.eventListeners.has(event)) {
+            this.eventListeners.set(event, [listener]);
+        } else {
+            this.eventListeners.get(event)?.push(listener);
+        }
+    }
+
+    public off(event: StreamClientEvents | string, listener: EventListener): void {
+        // remove from fixed list
+        const listeners = this.eventListeners.get(event);
+        if (listeners && listeners.length > 0) {
+            const idx = listeners.findIndex(l => l === listener);
+            listeners.splice(idx, 1);
+        }
+        // remove from temporary list
+        const tempListeners = this.tempEventListeners.get(event);
+        if (tempListeners && tempListeners.length > 0) {
+            const idx = tempListeners.findIndex(l => l === listener);
+            tempListeners.splice(idx, 1);
+        }
     }
 }

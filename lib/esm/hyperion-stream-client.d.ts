@@ -1,9 +1,13 @@
-/// <reference types="node" />
-import EventEmitter from "node:events";
-import { ForkData, HyperionClientOptions, IncomingData, LIBData, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "./interfaces";
-export declare type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
-export declare type LibHandlerFunction = (data: LIBData) => void;
-export declare class HyperionStreamClient extends EventEmitter {
+import { AsyncHandlerFunction, EventListener, HyperionClientOptions, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "./interfaces";
+export declare enum StreamClientEvents {
+    DATA = "data",
+    LIBUPDATE = "libUpdate",
+    FORK = "fork",
+    EMPTY = "empty",
+    CONNECT = "connect",
+    DRAIN = "drain"
+}
+export declare class HyperionStreamClient {
     private socket?;
     private socketURL?;
     private lastReceivedBlock;
@@ -13,12 +17,10 @@ export declare class HyperionStreamClient extends EventEmitter {
     private reversibleBuffer;
     private onDataAsync?;
     private onLibDataAsync?;
-    onConnect?: () => void;
-    onLIB?: (data: LIBData) => void;
-    onFork?: (data: ForkData) => void;
-    onEmpty?: () => void;
     online: boolean;
     savedRequests: SavedRequest[];
+    eventListeners: Map<string, EventListener[]>;
+    tempEventListeners: Map<string, EventListener[]>;
     /**
      * @typedef {object} BaseOptions
      * @property {string} endpoint - Hyperion API Endpoint
@@ -119,7 +121,10 @@ export declare class HyperionStreamClient extends EventEmitter {
      */
     private checkLastBlock;
     private debugLog;
-    setLibHandler(handler: LibHandlerFunction): void;
     setAsyncDataHandler(handler: AsyncHandlerFunction): void;
     setAsyncLibDataHandler(handler: AsyncHandlerFunction): void;
+    private emit;
+    once(event: StreamClientEvents | string, listener: EventListener): void;
+    on(event: StreamClientEvents | string, listener: EventListener): void;
+    off(event: StreamClientEvents | string, listener: EventListener): void;
 }

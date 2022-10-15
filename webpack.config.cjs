@@ -5,6 +5,9 @@ const path = require('path');
 module.exports = {
     entry: './src/bundle-index.ts',
     mode: 'production',
+    externals: {
+        'cross-fetch': 'fetch'
+    },
     module: {
         rules: [
             {

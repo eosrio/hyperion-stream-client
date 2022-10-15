@@ -2,6 +2,14 @@
 
 Streaming Client for Hyperion History API (v3+)
 
+### Supported Environments
+ - Node.js v16 and up
+   - ES Module
+   - CommonJS
+ - Browsers
+   - ES Module
+   - UMD
+
 ### Usage
 
 We currently provide libraries for nodejs and prebuilt browser bundle

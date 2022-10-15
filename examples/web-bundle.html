@@ -19,6 +19,10 @@
 <h2>Hyperion Stream Demo</h2>
 <div>
     <span>Status: <strong id="status">disconnected</strong></span>
+    <br>
+    <span>Last Irreversible Block: <strong id="lib_block_num">waiting...</strong></span>
+    <br>
+    <span>LIB ID: <strong id="lib_block_id">waiting...</strong></span>
 </div>
 <br>
 <table style="text-align: left; border-spacing: 5px; width: 100%">
@@ -28,11 +32,11 @@
     </tr>
     <tr>
         <th><span>Filter Contract: </span></th>
-        <th><input id="contract" value="tibs"></th>
+        <th><input id="contract" value="market.tibs"></th>
     </tr>
     <tr>
         <th><span>Filter Action: </span></th>
-        <th><input id="name" placeholder="Action" value="mintasset"></th>
+        <th><input id="name" placeholder="Action" value="*"></th>
     </tr>
     <tr>
         <th><span>Notified Account: </span></th>
@@ -46,14 +50,20 @@
 <div id="action"></div>
 <div id="actionData"></div>
 <script>
-    const client = new HyperionStreamClient('https://sidechain.node.tibs.app', {
-        async: true,
+
+    function getValue(id) {
+        return document.getElementById(id)["value"];
+    }
+
+    const client = new HyperionStreamClient({
+        endpoint: 'https://sidechain.node.tibs.app',
         libStream: false,
         debug: true
     });
+
     let isConnected = false;
 
-    const handler = (data, ack) => {
+    const handler = (data) => {
         const content = data.content;
         if (data.type === 'action') {
             const act = data.content['act'];
@@ -75,35 +85,37 @@
             list += '</div>';
             document.getElementById('actionData').innerHTML = list;
         }
-        ack();
     };
 
-    client.onData = handler;
+    client.setAsyncDataHandler(handler);
 
-    client.onLIB = (libData) => {
-        console.log('LIB ->', libData);
-        console.log(client.lastBlockNum);
-    };
+    client.on('libUpdate', (libData) => {
+        document.getElementById('lib_block_num').innerText = libData.block_num.toString();
+        document.getElementById('lib_block_id').innerText = libData.block_id;
+    })
 
-    client.onConnect = () => {
-        client.streamActions({
-            contract: document.getElementById('contract').value,
-            action: document.getElementById('name').value,
-            account: document.getElementById('account').value,
-            start_from: 'lib',
-            read_until: 0,
-            filters: [],
-        });
-    };
+    client.once('connect', () => {
+        console.log('connected!');
+    });
 
-    function connect() {
+    async function connect() {
         if (!isConnected) {
-            client.socketURL = document.getElementById('serverUrl').value
-            client.connect(() => {
-                isConnected = true;
-                document.getElementById('status').innerText = 'connected';
-                console.log('connected!');
-                document.getElementById('action').innerText = 'waiting for action...';
+            client.setEndpoint(getValue('serverUrl'));
+
+            await client.connect();
+
+            isConnected = true;
+            document.getElementById('status').innerText = 'connected';
+
+            document.getElementById('action').innerText = 'waiting for action...';
+
+            await client.streamActions({
+                contract: getValue('contract'),
+                action: getValue('name'),
+                account: getValue('account'),
+                start_from: 'lib',
+                read_until: 0,
+                filters: [],
             });
         }
     }

@@ -1,5 +1,26 @@
-const {HyperionStreamClient} = require('../lib/cjs/index.js');
+const {HyperionStreamClient} = require('../lib/cjs/index');
 
-const client = new HyperionStreamClient('https://sidechain.node.tibs.app');
+console.log(HyperionStreamClient);
 
-console.log(client);
+const client = new HyperionStreamClient({
+    endpoint: 'https://sidechain.node.tibs.app',
+    debug: true
+});
+
+client.on('empty', () => {
+    console.log('Queue Empty!');
+});
+
+client.on('libUpdate', (data) => {
+    console.log('Current LIB:', data.block_num);
+});
+
+client.on('fork', (data) => {
+    console.log('Fork Event:', data);
+});
+
+async function run() {
+    await client.connect();
+}
+
+run().catch(console.log);
