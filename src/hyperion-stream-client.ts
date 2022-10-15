@@ -23,6 +23,9 @@ function trimTrailingSlash(input: string) {
     }
 }
 
+export type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
+export type LibHandlerFunction = (data: LIBData) => void;
+
 export class HyperionStreamClient extends EventEmitter {
 
     private socket?: Socket;
@@ -38,11 +41,11 @@ export class HyperionStreamClient extends EventEmitter {
     private libDataQueue: QueueObject<IncomingData> | null = null;
     private reversibleBuffer: IncomingData[] = [];
 
+    private onDataAsync?: AsyncHandlerFunction;
+    private onLibDataAsync?: AsyncHandlerFunction;
+
     onConnect?: () => void;
-    onData?: (data: IncomingData, ack?: () => void) => void;
-    onDataAsync?: (data: IncomingData) => Promise<void>;
-    onLibData?: (data: IncomingData, ack?: () => void) => void;
-    onLIB: (data: LIBData) => void;
+    onLIB?: (data: LIBData) => void;
     onFork?: (data: ForkData) => void;
     onEmpty?: () => void;
 
@@ -143,22 +146,29 @@ export class HyperionStreamClient extends EventEmitter {
                 ack: taskCallback
             });
 
-            // call onData direct handler
-            if (this.onData) {
-                if (this.options.async) {
-                    this.pushToBuffer(task);
-                    this.onData(task, () => {
-                        taskCallback();
-                    });
-                } else {
-                    this.onData(task);
-                    this.pushToBuffer(task);
-                    taskCallback();
-                }
-            } else {
+            if (this.onDataAsync) {
                 this.pushToBuffer(task);
-                taskCallback();
+                this.onDataAsync(task).then(() => {
+                    taskCallback();
+                });
             }
+
+            // // call onData direct handler
+            // if (this.onData) {
+            //     if (this.options.async) {
+            //         this.pushToBuffer(task);
+            //         this.onData(task, () => {
+            //             taskCallback();
+            //         });
+            //     } else {
+            //         this.onData(task);
+            //         this.pushToBuffer(task);
+            //         taskCallback();
+            //     }
+            // } else {
+            //     this.pushToBuffer(task);
+            //     taskCallback();
+            // }
         }, 1);
 
         // assign an error callback
@@ -172,9 +182,12 @@ export class HyperionStreamClient extends EventEmitter {
             // console.log('all items have been processed');
         });
 
-        if (this.onEmpty) {
-            this.dataQueue.empty(this.onEmpty);
-        }
+        this.dataQueue.empty(() => {
+            this.emit('empty');
+            if (this.onEmpty) {
+                this.onEmpty();
+            }
+        });
     }
 
     private setupIrreversibleQueue(): void {
@@ -182,15 +195,10 @@ export class HyperionStreamClient extends EventEmitter {
         if (this.options.libStream) {
             this.libDataQueue = queue((task: IncomingData, callback) => {
                 task.irreversible = true;
-                if (this.onLibData) {
-                    if (this.options.async) {
-                        this.onLibData(task, () => {
-                            callback();
-                        });
-                    } else {
-                        this.onLibData(task);
+                if (this.onLibDataAsync) {
+                    this.onLibDataAsync(task).then(() => {
                         callback();
-                    }
+                    });
                 } else {
                     callback();
                 }
@@ -222,6 +230,7 @@ export class HyperionStreamClient extends EventEmitter {
             }
         }
 
+        this.emit('libUpdate', msg);
         if (this.onLIB) {
             this.onLIB(msg);
         }
@@ -240,28 +249,36 @@ export class HyperionStreamClient extends EventEmitter {
             if (!this.socketURL) {
                 reject();
             } else {
-                this.socket = io(this.socketURL, {transports: ["websocket"]});
+                this.socket = io(this.socketURL, {
+                    transports: ["websocket"],
+                    path: '/stream'
+                });
                 this.socket.on('connect', () => {
                     this.debugLog('connected');
                     this.online = true;
+                    this.emit('connect');
                     if (this.onConnect) {
                         this.onConnect();
                     }
+                    this.resendRequests().catch(console.log);
                     resolve();
                 });
+
                 this.socket.on('error', (msg) => {
                     console.log(msg);
                 });
+
                 this.socket.on('lib_update', this.handleLibUpdate.bind(this));
 
                 this.socket.on('fork_event', (msg) => {
+                    this.emit('fork', msg);
                     if (this.onFork) {
                         this.onFork(msg);
                     }
                 });
 
                 this.socket.on('message', (msg: any) => {
-                    if ((this.onData || this.onLibData) && (msg.message || msg['messages'])) {
+                    if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg['messages'])) {
                         switch (msg.type) {
                             case 'delta_trace': {
                                 if (msg['messages']) {
@@ -309,21 +326,22 @@ export class HyperionStreamClient extends EventEmitter {
                 this.socket.on('disconnect', () => {
                     this.online = false;
                     console.log('disconnected!');
+                    // setTimeout(() => {
+                    //     this.connect().catch(console.log);
+                    // }, 3000);
                 });
             }
         });
     }
 
     /**
-     * Start session. Action handlers should be defined before this method is called
-     * @param {function} [callback] - function to execute on a successful connection
-     *
+     * Start session. Handlers should be defined before this method is called
      * @example
      * connect(()=>{
      *     console.log('Connection was successful!');
      * });
      */
-    public async connect(callback?: () => void): Promise<void> {
+    public async connect(): Promise<void> {
         this.setupIncomingQueue();
         this.setupIrreversibleQueue();
         if (!this.socketURL) {
@@ -332,9 +350,6 @@ export class HyperionStreamClient extends EventEmitter {
         this.debugLog(`Connecting to ${this.socketURL}...`);
         await this.setupSocket();
         this.emit('connect');
-        if (callback) {
-            callback();
-        }
     }
 
     /**
@@ -344,16 +359,16 @@ export class HyperionStreamClient extends EventEmitter {
      * @private
      */
     private processActionTrace(action: ActionContent, mode: "live" | "history") {
-        const metakey = '@' + action['act'].name;
-        if (action[metakey]) {
-            const parsedData = action[metakey];
+        const metaKey = '@' + action['act'].name;
+        if (action[metaKey]) {
+            const parsedData = action[metaKey];
             Object.keys(parsedData).forEach((key) => {
                 if (!action['act']['data']) {
                     action['act']['data'] = {};
                 }
                 action['act']['data'][key] = parsedData[key];
             });
-            delete action[metakey];
+            delete action[metaKey];
         }
         if (this.dataQueue) {
             this.dataQueue.push({
@@ -402,7 +417,10 @@ export class HyperionStreamClient extends EventEmitter {
      * Replay cached requests
      */
     async resendRequests() {
-        console.log('resending saved requests');
+        if (this.savedRequests.length === 0) {
+            return;
+        }
+        this.debugLog(`Sending ${this.savedRequests.length} saved requests`);
         const savedReqs = [...this.savedRequests];
         this.savedRequests = [];
         for (const r of savedReqs) {
@@ -558,5 +576,17 @@ export class HyperionStreamClient extends EventEmitter {
         if (this.options.debug) {
             console.log('[hyperion:debug]', ...args);
         }
+    }
+
+    public setLibHandler(handler: LibHandlerFunction) {
+        this.onLIB = handler;
+    }
+
+    public setAsyncDataHandler(handler: AsyncHandlerFunction) {
+        this.onDataAsync = handler;
+    }
+
+    public setAsyncLibDataHandler(handler: AsyncHandlerFunction) {
+        this.onLibDataAsync = handler;
     }
 }

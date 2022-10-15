@@ -1,6 +1,8 @@
 /// <reference types="node" />
 import EventEmitter from "node:events";
 import { ForkData, HyperionClientOptions, IncomingData, LIBData, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "./interfaces";
+export declare type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
+export declare type LibHandlerFunction = (data: LIBData) => void;
 export declare class HyperionStreamClient extends EventEmitter {
     private socket?;
     private socketURL?;
@@ -9,10 +11,10 @@ export declare class HyperionStreamClient extends EventEmitter {
     private options;
     private libDataQueue;
     private reversibleBuffer;
+    private onDataAsync?;
+    private onLibDataAsync?;
     onConnect?: () => void;
-    onData?: (data: IncomingData, ack?: () => void) => void;
-    onLibData?: (data: IncomingData, ack?: () => void) => void;
-    onLIB: (data: LIBData) => void;
+    onLIB?: (data: LIBData) => void;
     onFork?: (data: ForkData) => void;
     onEmpty?: () => void;
     online: boolean;
@@ -50,15 +52,13 @@ export declare class HyperionStreamClient extends EventEmitter {
     private handleLibUpdate;
     private setupSocket;
     /**
-     * Start session. Action handlers should be defined before this method is called
-     * @param {function} [callback] - function to execute on a successful connection
-     *
+     * Start session. Handlers should be defined before this method is called
      * @example
      * connect(()=>{
      *     console.log('Connection was successful!');
      * });
      */
-    connect(callback?: () => void): Promise<void>;
+    connect(): Promise<void>;
     /**
      * Internal method to parse an action streaming trace
      * @param action
@@ -119,4 +119,7 @@ export declare class HyperionStreamClient extends EventEmitter {
      */
     private checkLastBlock;
     private debugLog;
+    setLibHandler(handler: LibHandlerFunction): void;
+    setAsyncDataHandler(handler: AsyncHandlerFunction): void;
+    setAsyncLibDataHandler(handler: AsyncHandlerFunction): void;
 }

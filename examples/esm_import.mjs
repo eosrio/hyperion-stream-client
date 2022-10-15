@@ -1,15 +1,76 @@
 import {HyperionStreamClient} from "../lib/esm/index.js";
 
-const client = new HyperionStreamClient('https://sidechain.node.tibs.app',{
-    async: true,
+const client = new HyperionStreamClient({
+    endpoint: 'http://192.168.0.51:1234',
     debug: true
 });
 
-client.onLIB = (libData) => {
-    console.log('Current LIB:', libData.block_num);
-    console.log(client.lastBlockNum);
-};
+async function handler(data) {
+    switch (data.type) {
+        case 'action': {
+            const action = data.content;
+            const act = action.act;
+            const actData = act.data;
+            console.log(`Action - [${act.account}::${act.name}] >> ${JSON.stringify(actData)}`);
+            break;
+        }
+        case 'delta': {
+            const delta = data.content;
+            const row = delta.data;
+            console.log(`Delta -  [${delta.code}::${delta.table}] >> ${JSON.stringify(row)}`);
+            break;
+        }
+    }
+}
 
-client.connect(() => {
-    console.log('connected!');
+client.setAsyncDataHandler(handler);
+
+client.on('empty', () => {
+    console.log('Queue Empty!');
+});
+
+client.on('libUpdate', (data) => {
+    console.log('Current LIB:', data.block_num);
+});
+
+client.on('fork', (data) => {
+    console.log('Fork Event:', data);
+});
+
+await client.connect();
+
+await client.streamActions({
+    contract: 'tibs',
+    action: '*',
+    account: '',
+    filters: [],
+    read_until: 0,
+    start_from: 594621
+});
+
+await client.streamActions({
+    contract: 'market.tibs',
+    action: '*',
+    account: '',
+    filters: [],
+    read_until: 0,
+    start_from: 594621
+});
+
+await client.streamDeltas({
+    code: 'tibs',
+    scope: '*',
+    table: '*',
+    payer: '',
+    read_until: 0,
+    start_from: 594621
+});
+
+await client.streamDeltas({
+    code: 'market.tibs',
+    scope: '*',
+    table: '*',
+    payer: '',
+    read_until: 0,
+    start_from: 594621
 });
