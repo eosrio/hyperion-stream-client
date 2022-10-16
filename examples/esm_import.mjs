@@ -2,7 +2,8 @@ import {HyperionStreamClient} from "../lib/esm/index.js";
 
 const client = new HyperionStreamClient({
     endpoint: 'https://sidechain.node.tibs.app',
-    debug: true
+    debug: true,
+    libStream: false
 });
 
 async function handler(data) {
@@ -45,7 +46,7 @@ await client.streamActions({
     account: '',
     filters: [],
     read_until: 0,
-    start_from: 669080
+    start_from: 0
 });
 
 await client.streamActions({
@@ -54,7 +55,7 @@ await client.streamActions({
     account: '',
     filters: [],
     read_until: 0,
-    start_from: 669080
+    start_from: 0
 });
 
 await client.streamDeltas({
@@ -63,7 +64,7 @@ await client.streamDeltas({
     table: '*',
     payer: '',
     read_until: 0,
-    start_from: 669080
+    start_from: 0
 });
 
 await client.streamDeltas({
@@ -72,5 +73,5 @@ await client.streamDeltas({
     table: '*',
     payer: '',
     read_until: 0,
-    start_from: 669080
+    start_from: 0
 });
