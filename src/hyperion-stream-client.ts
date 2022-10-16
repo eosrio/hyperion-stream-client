@@ -26,7 +26,8 @@ export enum StreamClientEvents {
     FORK = 'fork',
     EMPTY = 'empty',
     CONNECT = 'connect',
-    DRAIN = 'drain'
+    DRAIN = 'drain',
+    LIBDATA = 'libData',
 }
 
 function trimTrailingSlash(input: string) {
@@ -144,11 +145,13 @@ export class HyperionStreamClient {
         this.dataQueue = queue((task: IncomingData, taskCallback) => {
             task.irreversible = false;
             this.emit(StreamClientEvents.DATA, task);
+            this.pushToBuffer(task);
             if (this.onDataAsync) {
-                this.pushToBuffer(task);
                 this.onDataAsync(task).then(() => {
                     taskCallback();
                 });
+            } else {
+                taskCallback();
             }
         }, 1);
 
@@ -173,6 +176,7 @@ export class HyperionStreamClient {
         if (this.options.libStream) {
             this.libDataQueue = queue((task: IncomingData, callback) => {
                 task.irreversible = true;
+                this.emit(StreamClientEvents.LIBDATA, task);
                 if (this.onLibDataAsync) {
                     this.onLibDataAsync(task).then(() => {
                         callback();
