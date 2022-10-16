@@ -4,7 +4,6 @@ export interface SavedRequest {
 }
 /**
  * Options used to configure the streaming client
- * @field {string}
  */
 export interface HyperionClientOptions {
     /** Hyperion HTTP API w/ streaming enabled */
