@@ -1,3 +1,11 @@
 scripts
 src
 examples
+lib/**/*.ts
+lib/**/*.map
+!lib/**/*.d.ts
+lib/*/bundle-index.*
+.idea
+*.tgz
+tsconfig.*
+webpack.config.cjs

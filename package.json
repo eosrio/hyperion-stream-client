@@ -1,6 +1,6 @@
 {
   "name": "@eosrio/hyperion-stream-client",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Streaming Client for Hyperion History",
   "main": "./lib/esm/index.js",
   "exports": {
@@ -24,8 +24,7 @@
     "build:webpack:watch": "webpack --watch",
     "build:all": "npm run build:esm && npm run build:cjs && npm run fix-hybrid-packages && npm run build:webpack",
     "fix-hybrid-packages": "node scripts/create-dist-packages.mjs",
-    "test:esm:debug": "node examples/esm_import.mjs --inspect",
-    "postinstall": "npm run build:all"
+    "test:esm:debug": "node examples/esm_import.mjs --inspect"
   },
   "repository": "eosrio/hyperion-stream-client",
   "author": {
@@ -35,9 +34,6 @@
   "engines": {
     "node": ">=16"
   },
-  "files": [
-    "lib"
-  ],
   "license": "MIT",
   "dependencies": {
     "async": "^3.2.4",
