@@ -5,7 +5,8 @@ export declare enum StreamClientEvents {
     FORK = "fork",
     EMPTY = "empty",
     CONNECT = "connect",
-    DRAIN = "drain"
+    DRAIN = "drain",
+    LIBDATA = "libData"
 }
 export declare class HyperionStreamClient {
     private socket?;
