@@ -322,7 +322,6 @@ export class HyperionStreamClient {
         }
         this.debugLog(`Connecting to ${this.socketURL}...`);
         await this.setupSocket();
-        this.emit(StreamClientEvents.CONNECT);
     }
 
     /**
@@ -452,10 +451,7 @@ export class HyperionStreamClient {
                         }
                     });
                 } else {
-                    reject({
-                        status: false,
-                        error: 'socket was not created'
-                    });
+                    reject({status: false, error: 'socket was not created'});
                 }
             });
         } else {
@@ -498,12 +494,11 @@ export class HyperionStreamClient {
                         }
                     });
                 } else {
-                    reject({
-                        status: false,
-                        error: 'socket was not created'
-                    });
+                    reject({status: false, error: 'socket was not created'});
                 }
             });
+        } else {
+            throw new Error('Client is not connected! Please call connect before sending requests');
         }
     }
 
