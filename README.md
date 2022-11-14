@@ -96,7 +96,7 @@ below;
 import {HyperionStreamClient, StreamClientEvents} from "@eosrio/hyperion-stream-client";
 
 const client = new HyperionStreamClient({
-    endpoint: "https://sidechain.node.tibs.app",
+    endpoint: "http://localhost:1234",
     debug: true,
     libStream: false
 });
