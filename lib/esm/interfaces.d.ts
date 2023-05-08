@@ -86,6 +86,6 @@ export interface ForkData {
     ending_block: number;
     new_id: string;
 }
-export declare type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
-export declare type EventData = IncomingData | LIBData | ForkData | void | undefined;
-export declare type EventListener = (data?: EventData) => void;
+export type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
+export type EventData = IncomingData | LIBData | ForkData | void | undefined;
+export type EventListener = (data?: EventData) => void;

@@ -1,7 +1,7 @@
 import {HyperionStreamClient} from "../lib/esm/index.js";
 
 const client = new HyperionStreamClient({
-    endpoint: 'https://sidechain.node.tibs.app',
+    endpoint: 'ws://172.19.125.140:11234',
     debug: true,
     libStream: false
 });

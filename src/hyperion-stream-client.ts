@@ -527,7 +527,10 @@ export class HyperionStreamClient {
                 }
             }
         } else if (request.start_from !== 0 && this.lastReceivedBlock) {
-            if (request.start_from < this.lastReceivedBlock) {
+            if(typeof request.start_from) {
+
+            }
+            if (Number(request.start_from)< this.lastReceivedBlock) {
                 request.start_from = this.lastReceivedBlock;
             }
         }
