@@ -1,6 +1,10 @@
 export interface SavedRequest {
+    reqUUID?: string;
     type: string;
+    error?: string;
     req: StreamActionsRequest | StreamDeltasRequest;
+    firstReceivedBlock?: number;
+    pendingMessages?: any[];
 }
 /**
  * Options used to configure the streaming client

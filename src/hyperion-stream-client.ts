@@ -58,6 +58,7 @@ export class HyperionStreamClient {
 
     online: boolean = false;
     savedRequests: SavedRequest[] = [];
+    requestMap: Map<string, SavedRequest> = new Map();
 
     eventListeners: Map<string, EventListener[]> = new Map();
     tempEventListeners: Map<string, EventListener[]> = new Map();
@@ -143,6 +144,7 @@ export class HyperionStreamClient {
     private setupIncomingQueue(): void {
         // setup incoming queue
         this.dataQueue = queue((task: IncomingData, taskCallback) => {
+            console.log(task.mode, task.content.block_num);
             task.irreversible = false;
             this.emit(StreamClientEvents.DATA, task);
             this.pushToBuffer(task);
@@ -251,7 +253,17 @@ export class HyperionStreamClient {
                 });
 
                 this.socket.on('message', (msg: any) => {
+
+                    if (msg.type === 'action_trace_init') {
+                        console.log(`First Block received: ${msg.block_num} for ${msg.reqUUID}`);
+                    }
+
                     if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg['messages'])) {
+                        if (msg['error']) {
+                            console.log(msg['error']);
+                            this.socket?.close();
+                            return;
+                        }
                         switch (msg.type) {
                             case 'delta_trace': {
                                 if (msg['messages']) {
@@ -443,8 +455,13 @@ export class HyperionStreamClient {
                     this.socket.emit('action_stream_request', request, (response: any) => {
                         this.debugLog(response);
                         if (response.status === 'OK') {
-                            this.savedRequests.push({type: 'action', req: request});
+                            const reqObj: SavedRequest = {
+                                type: 'action',
+                                req: request
+                            };
+                            this.savedRequests.push(reqObj);
                             response['startingBlock'] = request.start_from;
+                            console.log(response);
                             resolve(response);
                         } else {
                             reject(response);
@@ -527,10 +544,10 @@ export class HyperionStreamClient {
                 }
             }
         } else if (request.start_from !== 0 && this.lastReceivedBlock) {
-            if(typeof request.start_from) {
+            if (typeof request.start_from) {
 
             }
-            if (Number(request.start_from)< this.lastReceivedBlock) {
+            if (Number(request.start_from) < this.lastReceivedBlock) {
                 request.start_from = this.lastReceivedBlock;
             }
         }

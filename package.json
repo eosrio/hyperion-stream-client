@@ -1,6 +1,6 @@
 {
   "name": "@eosrio/hyperion-stream-client",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "Streaming Client for Hyperion History",
   "main": "./lib/esm/index.js",
   "exports": {

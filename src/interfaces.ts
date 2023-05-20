@@ -1,6 +1,10 @@
 export interface SavedRequest {
-    type: string,
-    req: StreamActionsRequest | StreamDeltasRequest
+    reqUUID?: string;
+    type: string;
+    error?: string;
+    req: StreamActionsRequest | StreamDeltasRequest;
+    firstReceivedBlock?: number;
+    pendingMessages?: any[];
 }
 
 /**
