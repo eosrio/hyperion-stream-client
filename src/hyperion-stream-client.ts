@@ -148,7 +148,7 @@ export class HyperionStreamClient {
             if (trackedRequest) {
                 if (task.mode === 'history') {
                     trackedRequest.deliveryCounter++;
-                    if (trackedRequest.deliveryCounter === trackedRequest.historyResults) {
+                    if (trackedRequest.deliveryCounter + trackedRequest.filtered === trackedRequest.historyResults) {
                         // allow 2 blocks before adding the live queue back in
                         trackedRequest.liveQueueStartTimer = setTimeout(() => {
                             this.debugLog('All history data was received, allow live data flow...');
@@ -293,15 +293,19 @@ export class HyperionStreamClient {
 
                 this.socket.on('message', (msg: any) => {
 
+                    let trackedRequest;
+                    if (msg.reqUUID) {
+                        trackedRequest = this.requestMap.get(msg.reqUUID);
+                    }
+
                     if (msg.type === 'trace_init') {
-                        const trackedRequest = this.requestMap.get(msg.reqUUID);
                         if (trackedRequest) {
                             if (!trackedRequest.firstReceivedBlock) {
-                                this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} actions)`);
+                                this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} docs)`);
                                 trackedRequest.firstReceivedBlock = msg.first_block;
                                 trackedRequest.historyResults = msg.results;
                             } else {
-                                this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} actions)`);
+                                this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} docs)`);
                                 // increment total blocks in the case of a fill request
                                 trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
                             }
@@ -316,6 +320,12 @@ export class HyperionStreamClient {
                             this.socket?.close();
                             return;
                         }
+
+                        if (msg.messages && trackedRequest) {
+                            trackedRequest.filtered += msg.filtered;
+                            console.log(msg.type, msg.mode, msg.reqUUID, msg.filtered, msg.messages.length);
+                        }
+
                         switch (msg.type) {
                             case 'delta_trace': {
                                 if (msg['messages']) {
@@ -392,6 +402,7 @@ export class HyperionStreamClient {
      * Internal method to parse an action streaming trace
      * @param action
      * @param mode
+     * @param uuid
      * @private
      */
     private processActionTrace(action: ActionContent, mode: "live" | "history", uuid: string) {
@@ -422,6 +433,7 @@ export class HyperionStreamClient {
      * Internal method to parse a delta streaming trace
      * @param delta
      * @param mode
+     * @param uuid
      * @private
      */
     private processDeltaTrace(delta: DeltaContent, mode: "live" | "history", uuid: string) {
@@ -514,6 +526,7 @@ export class HyperionStreamClient {
                                 live: false,
                                 req: request,
                                 deliveryCounter: 0,
+                                filtered: 0,
                                 pendingMessages: []
                             };
                             this.savedRequests.push(reqObj);
@@ -563,6 +576,7 @@ export class HyperionStreamClient {
                                 live: false,
                                 req: request,
                                 deliveryCounter: 0,
+                                filtered: 0,
                                 pendingMessages: []
                             };
                             this.savedRequests.push(reqObj);

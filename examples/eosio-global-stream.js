@@ -6,26 +6,10 @@ const client = new HyperionStreamClient({
     debug: true
 });
 
-let lastBlock = 0;
-let liveCount = 0;
-
 client.setAsyncDataHandler(async (data) => {
-    console.log(data.content);
-    const block_num = data.content.block_num;
-    if (block_num > lastBlock) {
-        if (lastBlock > 0 && block_num > lastBlock + 1) {
-            console.log(`Skipped ${block_num - lastBlock - 1} Blocks - ${lastBlock + 1} to ${block_num - 1}`);
-        }
-        lastBlock = block_num;
+    if (data.content.data) {
+        console.log(data.content.data.owner, data.content.data.votepay_share);
     }
-
-    if (data.mode === 'live') {
-        liveCount++;
-        if (liveCount > 10) {
-            client.disconnect();
-        }
-    }
-
 });
 
 await client.connect();
@@ -33,10 +17,12 @@ await client.connect();
 const response = await client.streamDeltas({
     code: 'eosio',
     scope: 'eosio',
-    table: 'global',
+    table: 'producers2',
     payer: '',
-    start_from: -10,
-    filters: [],
+    start_from: -100,
+    filters: [
+        {field: 'data.owner', value: 'eosriobrazil'}
+    ],
 });
 
 if (response.status !== 'OK') {

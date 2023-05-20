@@ -9,6 +9,7 @@ export interface SavedRequest {
     historyResults?: number;
     deliveryCounter: number;
     pendingMessages: any[];
+    filtered: number;
 }
 /**
  * Options used to configure the streaming client
