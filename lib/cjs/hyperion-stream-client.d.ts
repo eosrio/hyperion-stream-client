@@ -20,6 +20,7 @@ export declare class HyperionStreamClient {
     private onLibDataAsync?;
     online: boolean;
     savedRequests: SavedRequest[];
+    requestMap: Map<string, SavedRequest>;
     eventListeners: Map<string, EventListener[]>;
     tempEventListeners: Map<string, EventListener[]>;
     /**

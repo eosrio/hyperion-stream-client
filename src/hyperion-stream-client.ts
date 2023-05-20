@@ -144,16 +144,55 @@ export class HyperionStreamClient {
     private setupIncomingQueue(): void {
         // setup incoming queue
         this.dataQueue = queue((task: IncomingData, taskCallback) => {
-            console.log(task.mode, task.content.block_num);
-            task.irreversible = false;
-            this.emit(StreamClientEvents.DATA, task);
-            this.pushToBuffer(task);
-            if (this.onDataAsync) {
-                this.onDataAsync(task).then(() => {
+            const trackedRequest = this.requestMap.get(task.uuid);
+            if (trackedRequest) {
+                if (task.mode === 'history') {
+                    trackedRequest.deliveryCounter++;
+                    if (trackedRequest.deliveryCounter === trackedRequest.historyResults) {
+                        // allow 2 blocks before adding the live queue back in
+                        trackedRequest.liveQueueStartTimer = setTimeout(() => {
+                            this.debugLog('All history data was received, allow live data flow...');
+                            trackedRequest.live = true;
+                            this.dataQueue?.push(trackedRequest.pendingMessages);
+                            trackedRequest.pendingMessages = [];
+                        }, 2500) as unknown as number;
+                    } else {
+                        // if the live queue is about to start and another history message arrives, cancel the start
+                        if (trackedRequest.liveQueueStartTimer) {
+                            clearTimeout(trackedRequest.liveQueueStartTimer);
+                        }
+                    }
+                }
+
+                if (task.mode === "live" && !trackedRequest.live) {
+                    // add any live message to pending
+                    if (trackedRequest) {
+                        trackedRequest.pendingMessages.push(task);
+                        this.debugLog(`Received live message, adding to pending messages (${trackedRequest.pendingMessages.length})`);
+                    }
                     taskCallback();
-                });
-            } else {
-                taskCallback();
+                } else {
+
+                    if (task.mode === 'history') {
+                        this.debugLog(task.mode, task.content.block_num, trackedRequest.deliveryCounter, trackedRequest.historyResults);
+                    } else {
+                        this.debugLog(task.mode, task.content.block_num);
+                    }
+
+                    // normal processing
+                    task.irreversible = false;
+                    this.emit(StreamClientEvents.DATA, task);
+                    this.pushToBuffer(task);
+                    // run user-defined async callback
+                    if (this.onDataAsync && typeof this.onDataAsync === 'function') {
+                        this.onDataAsync(task).then(() => {
+                            taskCallback();
+                        });
+                    } else {
+                        taskCallback();
+                    }
+
+                }
             }
         }, 1);
 
@@ -255,7 +294,20 @@ export class HyperionStreamClient {
                 this.socket.on('message', (msg: any) => {
 
                     if (msg.type === 'action_trace_init') {
-                        console.log(`First Block received: ${msg.block_num} for ${msg.reqUUID}`);
+                        const trackedRequest = this.requestMap.get(msg.reqUUID);
+                        if (trackedRequest) {
+                            if (!trackedRequest.firstReceivedBlock) {
+                                this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} actions)`);
+                                trackedRequest.firstReceivedBlock = msg.first_block;
+                                trackedRequest.historyResults = msg.results;
+                            } else {
+                                this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} actions)`);
+                                // increment total blocks in the case of a fill request
+                                trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
+                            }
+                        } else {
+                            console.log('Untracked request, something went wrong!');
+                        }
                     }
 
                     if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg['messages'])) {
@@ -268,20 +320,20 @@ export class HyperionStreamClient {
                             case 'delta_trace': {
                                 if (msg['messages']) {
                                     msg['messages'].forEach((message: DeltaContent) => {
-                                        this.processDeltaTrace(message, msg.mode);
+                                        this.processDeltaTrace(message, msg.mode, msg.reqUUID);
                                     });
                                 } else {
-                                    this.processDeltaTrace(JSON.parse(msg.message), msg.mode);
+                                    this.processDeltaTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
                                 }
                                 break;
                             }
                             case 'action_trace': {
                                 if (msg['messages']) {
                                     msg['messages'].forEach((message: ActionContent) => {
-                                        this.processActionTrace(message, msg.mode);
+                                        this.processActionTrace(message, msg.mode, msg.reqUUID);
                                     });
                                 } else {
-                                    this.processActionTrace(JSON.parse(msg.message), msg.mode);
+                                    this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
                                 }
                                 break;
                             }
@@ -342,7 +394,7 @@ export class HyperionStreamClient {
      * @param mode
      * @private
      */
-    private processActionTrace(action: ActionContent, mode: "live" | "history") {
+    private processActionTrace(action: ActionContent, mode: "live" | "history", uuid: string) {
         const metaKey = '@' + action['act'].name;
         if (action[metaKey]) {
             const parsedData = action[metaKey];
@@ -356,6 +408,7 @@ export class HyperionStreamClient {
         }
         if (this.dataQueue) {
             this.dataQueue.push({
+                uuid: uuid,
                 type: 'action',
                 mode: mode,
                 content: action,
@@ -371,7 +424,7 @@ export class HyperionStreamClient {
      * @param mode
      * @private
      */
-    private processDeltaTrace(delta: DeltaContent, mode: "live" | "history") {
+    private processDeltaTrace(delta: DeltaContent, mode: "live" | "history", uuid: string) {
         let metaKey = '@' + delta['table'];
         if (delta[metaKey + '.data']) {
             metaKey = metaKey + '.data'
@@ -388,6 +441,7 @@ export class HyperionStreamClient {
         }
         if (this.dataQueue) {
             this.dataQueue.push({
+                uuid: uuid,
                 type: 'delta',
                 mode: mode,
                 content: delta,
@@ -457,15 +511,16 @@ export class HyperionStreamClient {
                         if (response.status === 'OK') {
                             const reqObj: SavedRequest = {
                                 type: 'action',
-                                req: request
+                                live: false,
+                                req: request,
+                                deliveryCounter: 0,
+                                pendingMessages: []
                             };
                             this.savedRequests.push(reqObj);
+                            this.requestMap.set(response.reqUUID, reqObj);
                             response['startingBlock'] = request.start_from;
-                            console.log(response);
-                            resolve(response);
-                        } else {
-                            reject(response);
                         }
+                        resolve(response);
                     });
                 } else {
                     reject({status: false, error: 'socket was not created'});
@@ -503,7 +558,13 @@ export class HyperionStreamClient {
                     this.socket.emit('delta_stream_request', request, (response: any) => {
                         this.debugLog(response);
                         if (response.status === 'OK') {
-                            this.savedRequests.push({type: 'delta', req: request});
+                            this.savedRequests.push({
+                                type: 'delta',
+                                live: false,
+                                req: request,
+                                deliveryCounter: 0,
+                                pendingMessages: []
+                            });
                             response['startingBlock'] = request.start_from;
                             resolve(response);
                         } else {
@@ -570,7 +631,7 @@ export class HyperionStreamClient {
     private emit<T extends EventData>(event: StreamClientEvents | string, data?: T): void {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
-            listeners.forEach((l: EventListener) => l(data));
+            listeners.forEach((listener: EventListener) => listener(data));
         }
 
         const tempListeners = this.tempEventListeners.get(event);

@@ -1,10 +1,14 @@
 export interface SavedRequest {
+    live: boolean;
+    liveQueueStartTimer?: number;
     reqUUID?: string;
     type: string;
     error?: string;
     req: StreamActionsRequest | StreamDeltasRequest;
     firstReceivedBlock?: number;
-    pendingMessages?: any[];
+    historyResults?: number;
+    deliveryCounter: number;
+    pendingMessages: any[];
 }
 
 /**
@@ -85,6 +89,7 @@ export interface DeltaContent {
 }
 
 export interface IncomingData {
+    uuid: string,
     type: "action" | "delta";
     mode: "live" | "history";
     content: ActionContent | DeltaContent

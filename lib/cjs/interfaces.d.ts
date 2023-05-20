@@ -1,6 +1,14 @@
 export interface SavedRequest {
+    live: boolean;
+    liveQueueStartTimer?: number;
+    reqUUID?: string;
     type: string;
+    error?: string;
     req: StreamActionsRequest | StreamDeltasRequest;
+    firstReceivedBlock?: number;
+    historyResults?: number;
+    deliveryCounter: number;
+    pendingMessages: any[];
 }
 /**
  * Options used to configure the streaming client
@@ -70,6 +78,7 @@ export interface DeltaContent {
     [key: string]: any;
 }
 export interface IncomingData {
+    uuid: string;
     type: "action" | "delta";
     mode: "live" | "history";
     content: ActionContent | DeltaContent;
@@ -86,6 +95,6 @@ export interface ForkData {
     ending_block: number;
     new_id: string;
 }
-export declare type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
-export declare type EventData = IncomingData | LIBData | ForkData | void | undefined;
-export declare type EventListener = (data?: EventData) => void;
+export type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
+export type EventData = IncomingData | LIBData | ForkData | void | undefined;
+export type EventListener = (data?: EventData) => void;
