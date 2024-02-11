@@ -1,9 +1,7 @@
-export function trimTrailingSlash(input) {
+export function trimTrailingSlash(input: string) {
     if (input.endsWith('/')) {
         return input.slice(0, input.length - 1);
-    }
-    else {
+    } else {
         return input;
     }
 }
-//# sourceMappingURL=functions.js.map

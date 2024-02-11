@@ -1,4 +1,5 @@
 export interface SavedRequest {
+    started: boolean;
     live: boolean;
     liveQueueStartTimer?: number;
     reqUUID?: string;
@@ -10,6 +11,15 @@ export interface SavedRequest {
     deliveryCounter: number;
     pendingMessages: any[];
     filtered: number;
+}
+export declare enum StreamClientEvents {
+    DATA = "data",
+    LIBUPDATE = "libUpdate",
+    FORK = "fork",
+    EMPTY = "empty",
+    CONNECT = "connect",
+    DRAIN = "drain",
+    LIBDATA = "libData"
 }
 /**
  * Options used to configure the streaming client
@@ -28,6 +38,7 @@ export interface StreamDeltasRequest {
     payer: string;
     start_from: number | string;
     read_until: number | string;
+    filters: RequestFilter[];
 }
 export interface RequestFilter {
     field: string;

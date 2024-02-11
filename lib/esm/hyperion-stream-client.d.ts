@@ -1,13 +1,4 @@
-import { AsyncHandlerFunction, EventListener, HyperionClientOptions, SavedRequest, StreamActionsRequest, StreamDeltasRequest } from "./interfaces";
-export declare enum StreamClientEvents {
-    DATA = "data",
-    LIBUPDATE = "libUpdate",
-    FORK = "fork",
-    EMPTY = "empty",
-    CONNECT = "connect",
-    DRAIN = "drain",
-    LIBDATA = "libData"
-}
+import { AsyncHandlerFunction, EventListener, HyperionClientOptions, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest } from "./interfaces";
 export declare class HyperionStreamClient {
     private socket?;
     private socketURL?;
@@ -54,11 +45,16 @@ export declare class HyperionStreamClient {
     private setupIncomingQueue;
     private setupIrreversibleQueue;
     private handleLibUpdate;
+    private handleSocketMessage;
+    /**
+     * Internal method to set up the socket connection
+     * @private
+     */
     private setupSocket;
     /**
      * Start session. Handlers should be defined before this method is called
      * @example
-     * connect(()=>{
+     * connect(() => {
      *     console.log('Connection was successful!');
      * });
      */

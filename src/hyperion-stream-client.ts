@@ -14,29 +14,13 @@ import {
     IncomingData,
     LIBData,
     SavedRequest,
-    StreamActionsRequest,
+    StreamActionsRequest, StreamClientEvents,
     StreamDeltasRequest
 } from "./interfaces";
 
 import fetch from "cross-fetch";
 
-export enum StreamClientEvents {
-    DATA = 'data',
-    LIBUPDATE = 'libUpdate',
-    FORK = 'fork',
-    EMPTY = 'empty',
-    CONNECT = 'connect',
-    DRAIN = 'drain',
-    LIBDATA = 'libData',
-}
-
-function trimTrailingSlash(input: string) {
-    if (input.endsWith('/')) {
-        return input.slice(0, input.length - 1);
-    } else {
-        return input;
-    }
-}
+import {trimTrailingSlash} from "./functions";
 
 export class HyperionStreamClient {
 
@@ -146,6 +130,18 @@ export class HyperionStreamClient {
         this.dataQueue = queue((task: IncomingData, taskCallback) => {
             const trackedRequest = this.requestMap.get(task.uuid);
             if (trackedRequest) {
+
+                // Check if the first data payload was received, mark the request as started
+                if (!trackedRequest.started) {
+                    trackedRequest.started = true;
+
+                    if (task.mode === 'live') {
+                        trackedRequest.live = true;
+                    }
+                }
+
+                console.log(`Task mode ${task.mode} | Tracked Live: ${trackedRequest.live} | Start on: ${trackedRequest.req.start_from}`);
+
                 if (task.mode === 'history') {
                     trackedRequest.deliveryCounter++;
                     if (trackedRequest.deliveryCounter + trackedRequest.filtered === trackedRequest.historyResults) {
@@ -264,6 +260,69 @@ export class HyperionStreamClient {
         }
     }
 
+    private handleSocketMessage(msg: any) {
+        let trackedRequest;
+        if (msg.reqUUID) {
+            trackedRequest = this.requestMap.get(msg.reqUUID);
+        }
+
+        if (msg.type === 'trace_init') {
+            if (trackedRequest) {
+                if (!trackedRequest.firstReceivedBlock) {
+                    this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} docs)`);
+                    trackedRequest.firstReceivedBlock = msg.first_block;
+                    trackedRequest.historyResults = msg.results;
+                } else {
+                    this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} docs)`);
+                    // increment total blocks in the case of a fill request
+                    trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
+                }
+            } else {
+                console.log('Untracked request, something went wrong!');
+            }
+        }
+
+        if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg.messages)) {
+            if (msg['error']) {
+                console.log(msg['error']);
+                this.socket?.close();
+                return;
+            }
+
+            if (msg.messages && trackedRequest) {
+                trackedRequest.filtered += msg.filtered;
+                console.log(msg.type, msg.mode, msg.reqUUID, msg.filtered, msg.messages.length);
+            }
+
+            switch (msg.type) {
+                case 'delta_trace': {
+                    if (msg.messages) {
+                        msg.messages.forEach((message: DeltaContent) => {
+                            this.processDeltaTrace(message, msg.mode, msg.reqUUID);
+                        });
+                    } else if (msg.message) {
+                        this.processDeltaTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
+                    }
+                    break;
+                }
+                case 'action_trace': {
+                    if (msg.messages) {
+                        msg.messages.forEach((message: ActionContent) => {
+                            this.processActionTrace(message, msg.mode, msg.reqUUID);
+                        });
+                    } else if (msg.message) {
+                        this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Internal method to set up the socket connection
+     * @private
+     */
     private async setupSocket(): Promise<void> {
         return new Promise((resolve, reject) => {
             if (!this.socketURL) {
@@ -284,71 +343,13 @@ export class HyperionStreamClient {
                 this.socket.on('error', (msg) => {
                     console.log(msg);
                 });
-
                 this.socket.on('lib_update', this.handleLibUpdate.bind(this));
-
                 this.socket.on('fork_event', (msg) => {
                     this.emit<ForkData>(StreamClientEvents.FORK, msg);
                 });
 
                 this.socket.on('message', (msg: any) => {
-
-                    let trackedRequest;
-                    if (msg.reqUUID) {
-                        trackedRequest = this.requestMap.get(msg.reqUUID);
-                    }
-
-                    if (msg.type === 'trace_init') {
-                        if (trackedRequest) {
-                            if (!trackedRequest.firstReceivedBlock) {
-                                this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} docs)`);
-                                trackedRequest.firstReceivedBlock = msg.first_block;
-                                trackedRequest.historyResults = msg.results;
-                            } else {
-                                this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} docs)`);
-                                // increment total blocks in the case of a fill request
-                                trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
-                            }
-                        } else {
-                            console.log('Untracked request, something went wrong!');
-                        }
-                    }
-
-                    if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg['messages'])) {
-                        if (msg['error']) {
-                            console.log(msg['error']);
-                            this.socket?.close();
-                            return;
-                        }
-
-                        if (msg.messages && trackedRequest) {
-                            trackedRequest.filtered += msg.filtered;
-                            console.log(msg.type, msg.mode, msg.reqUUID, msg.filtered, msg.messages.length);
-                        }
-
-                        switch (msg.type) {
-                            case 'delta_trace': {
-                                if (msg['messages']) {
-                                    msg['messages'].forEach((message: DeltaContent) => {
-                                        this.processDeltaTrace(message, msg.mode, msg.reqUUID);
-                                    });
-                                } else {
-                                    this.processDeltaTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-                                }
-                                break;
-                            }
-                            case 'action_trace': {
-                                if (msg['messages']) {
-                                    msg['messages'].forEach((message: ActionContent) => {
-                                        this.processActionTrace(message, msg.mode, msg.reqUUID);
-                                    });
-                                } else {
-                                    this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-                                }
-                                break;
-                            }
-                        }
-                    }
+                    this.handleSocketMessage(msg);
                 });
 
                 this.socket.on('status', (status) => {
@@ -373,9 +374,6 @@ export class HyperionStreamClient {
                 this.socket.on('disconnect', () => {
                     this.online = false;
                     console.log('disconnected!');
-                    // setTimeout(() => {
-                    //     this.connect().catch(console.log);
-                    // }, 3000);
                 });
             }
         });
@@ -384,7 +382,7 @@ export class HyperionStreamClient {
     /**
      * Start session. Handlers should be defined before this method is called
      * @example
-     * connect(()=>{
+     * connect(() => {
      *     console.log('Connection was successful!');
      * });
      */
@@ -524,10 +522,11 @@ export class HyperionStreamClient {
                             const reqObj: SavedRequest = {
                                 type: 'action',
                                 live: false,
+                                started: false,
                                 req: request,
                                 deliveryCounter: 0,
                                 filtered: 0,
-                                pendingMessages: []
+                                pendingMessages: [],
                             };
                             this.savedRequests.push(reqObj);
                             this.requestMap.set(response.reqUUID, reqObj);
@@ -568,12 +567,18 @@ export class HyperionStreamClient {
             }
             return new Promise((resolve, reject) => {
                 if (this.socket) {
+
+                    if (!request.filters) {
+                        request.filters = [];
+                    }
+
                     this.socket.emit('delta_stream_request', request, (response: any) => {
                         this.debugLog(response);
                         if (response.status === 'OK') {
                             const reqObj = {
                                 type: 'delta',
                                 live: false,
+                                started: false,
                                 req: request,
                                 deliveryCounter: 0,
                                 filtered: 0,

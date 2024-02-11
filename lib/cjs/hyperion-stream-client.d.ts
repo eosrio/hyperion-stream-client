@@ -67,6 +67,7 @@ export declare class HyperionStreamClient {
      * Internal method to parse an action streaming trace
      * @param action
      * @param mode
+     * @param uuid
      * @private
      */
     private processActionTrace;
@@ -74,6 +75,7 @@ export declare class HyperionStreamClient {
      * Internal method to parse a delta streaming trace
      * @param delta
      * @param mode
+     * @param uuid
      * @private
      */
     private processDeltaTrace;
