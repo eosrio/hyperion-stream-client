@@ -37,15 +37,15 @@
   "license": "MIT",
   "dependencies": {
     "async": "^3.2.5",
-    "socket.io-client": "^4.7.4",
+    "socket.io-client": "^4.7.5",
     "cross-fetch": "^4.0.0"
   },
   "devDependencies": {
     "@types/async": "^3.2.24",
-    "@types/node": "^20.11.17",
+    "@types/node": "^20.14.8",
     "ts-loader": "^9.5.1",
-    "typescript": "5.3.3",
-    "webpack": "^5.90.1",
+    "typescript": "5.5.2",
+    "webpack": "^5.92.1",
     "webpack-cli": "^5.1.4"
   },
   "bugs": {
