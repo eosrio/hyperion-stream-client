@@ -16,11 +16,11 @@ import {
     SavedRequest,
     StreamActionsRequest, StreamClientEvents,
     StreamDeltasRequest
-} from "./interfaces";
+} from "./interfaces.js";
 
 import fetch from "cross-fetch";
 
-import {trimTrailingSlash} from "./functions";
+import {trimTrailingSlash} from "./functions.js";
 
 export class HyperionStreamClient {
 

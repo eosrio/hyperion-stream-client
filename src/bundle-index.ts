@@ -1,4 +1,4 @@
-import {HyperionStreamClient} from "./hyperion-stream-client";
+import {HyperionStreamClient} from "./hyperion-stream-client.js";
 
 // @ts-ignore
 if (typeof window !== 'undefined') {
@@ -6,5 +6,5 @@ if (typeof window !== 'undefined') {
     window['HyperionStreamClient'] = HyperionStreamClient;
 }
 
-export * from './interfaces';
-export * from './hyperion-stream-client';
+export * from './interfaces.js';
+export * from './hyperion-stream-client.js';
