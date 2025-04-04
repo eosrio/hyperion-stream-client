@@ -41,21 +41,24 @@ export interface StreamDeltasRequest {
     payer: string;
     start_from: number | string;
     read_until: number | string;
-    filters: RequestFilter[];
+    filter_op: 'and' | 'or';
+    filters?: RequestFilter[];
 }
 
 export interface RequestFilter {
     field: string;
-    value: string;
+    value: string | number | boolean;
+    operator?: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'starts_with' | 'ends_with';
 }
 
 export interface StreamActionsRequest {
     contract: string;
     account: string;
     action: string;
-    filters: RequestFilter[];
     start_from: number | string;
     read_until: number | string;
+    filter_op: 'and' | 'or';
+    filters?: RequestFilter[];
 }
 
 export interface ActionContent {
@@ -121,6 +124,29 @@ export interface ForkData {
     ending_block: number;
     new_id: string;
 }
+
+export interface HyperionStreamEventMap {
+    [StreamClientEvents.CONNECT]: void;
+    [StreamClientEvents.DRAIN]: void;
+    [StreamClientEvents.EMPTY]: void;
+    [StreamClientEvents.DATA]: IncomingData;
+    [StreamClientEvents.LIBDATA]: IncomingData;
+    [StreamClientEvents.LIBUPDATE]: LIBData;
+    [StreamClientEvents.FORK]: ForkData;
+    // String versions for convenience
+    'connect': void;
+    'drain': void;
+    'empty': void;
+    'data': IncomingData;
+    'libData': IncomingData;
+    'libUpdate': LIBData;
+    'fork': ForkData;
+}
+
+// Generic typed event listener
+export type TypedEventListener<K extends keyof HyperionStreamEventMap> =
+    (data: HyperionStreamEventMap[K]) => void;
+
 
 export type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
 export type EventData = IncomingData | LIBData | ForkData | void | undefined;
