@@ -7,15 +7,15 @@ import {
     ActionContent,
     AsyncHandlerFunction,
     DeltaContent,
-    EventData,
     EventListener,
-    ForkData,
     HyperionClientOptions,
+    HyperionStreamEventMap,
     IncomingData,
-    LIBData,
     SavedRequest,
-    StreamActionsRequest, StreamClientEvents,
-    StreamDeltasRequest
+    StreamActionsRequest,
+    StreamClientEvents,
+    StreamDeltasRequest,
+    TypedEventListener
 } from "./interfaces.js";
 
 import fetch from "cross-fetch";
@@ -200,11 +200,11 @@ export class HyperionStreamClient {
         });
 
         this.dataQueue.drain(() => {
-            this.emit<void>(StreamClientEvents.DRAIN);
+            this.emit(StreamClientEvents.DRAIN);
         });
 
         this.dataQueue.empty(() => {
-            this.emit<void>(StreamClientEvents.EMPTY);
+            this.emit(StreamClientEvents.EMPTY);
         });
     }
 
@@ -249,7 +249,7 @@ export class HyperionStreamClient {
             }
         }
 
-        this.emit<LIBData>(StreamClientEvents.LIBUPDATE, msg);
+        this.emit(StreamClientEvents.LIBUPDATE, msg);
 
         for (const request of this.savedRequests) {
             if (request.req.read_until && request.req.read_until !== 0) {
@@ -335,7 +335,7 @@ export class HyperionStreamClient {
                 this.socket.on('connect', () => {
                     this.debugLog('connected');
                     this.online = true;
-                    this.emit<void>(StreamClientEvents.CONNECT);
+                    this.emit(StreamClientEvents.CONNECT);
                     this.resendRequests().catch(console.log);
                     resolve();
                 });
@@ -345,7 +345,7 @@ export class HyperionStreamClient {
                 });
                 this.socket.on('lib_update', this.handleLibUpdate.bind(this));
                 this.socket.on('fork_event', (msg) => {
-                    this.emit<ForkData>(StreamClientEvents.FORK, msg);
+                    this.emit(StreamClientEvents.FORK, msg);
                 });
 
                 this.socket.on('message', (msg: any) => {
@@ -648,7 +648,7 @@ export class HyperionStreamClient {
         this.onLibDataAsync = handler;
     }
 
-    private emit<T extends EventData>(event: StreamClientEvents | string, data?: T): void {
+    private emit<K extends keyof HyperionStreamEventMap>(event: K, data?: HyperionStreamEventMap[K]): void {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
             listeners.forEach((listener: EventListener) => listener(data));
@@ -663,14 +663,14 @@ export class HyperionStreamClient {
         }
     }
 
-    public once(event: StreamClientEvents | string, listener: EventListener): void {
+    public once<K extends keyof HyperionStreamEventMap>(event: K, listener: TypedEventListener<K>): void {
         if (typeof listener !== 'function') {
             throw new Error('Event listener must be a function');
         }
         if (!this.tempEventListeners.has(event)) {
-            this.tempEventListeners.set(event, [listener]);
+            this.tempEventListeners.set(event, [listener as EventListener]);
         } else {
-            this.tempEventListeners.get(event)?.push(listener);
+            this.tempEventListeners.get(event)?.push(listener as EventListener);
         }
     }
 
