@@ -1,4 +1,4 @@
-import { AsyncHandlerFunction, EventListener, HyperionClientOptions, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest } from "./interfaces.js";
+import { AsyncHandlerFunction, EventListener, HyperionClientOptions, HyperionStreamEventMap, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest, TypedEventListener } from "./interfaces.js";
 export declare class HyperionStreamClient {
     private socket?;
     private socketURL?;
@@ -124,7 +124,7 @@ export declare class HyperionStreamClient {
     setAsyncDataHandler(handler: AsyncHandlerFunction): void;
     setAsyncLibDataHandler(handler: AsyncHandlerFunction): void;
     private emit;
-    once(event: StreamClientEvents | string, listener: EventListener): void;
+    once<K extends keyof HyperionStreamEventMap>(event: K, listener: TypedEventListener<K>): void;
     on(event: StreamClientEvents | string, listener: EventListener): void;
     off(event: StreamClientEvents | string, listener: EventListener): void;
 }

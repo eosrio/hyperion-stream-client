@@ -1,7 +1,7 @@
 import {HyperionStreamClient} from "../lib/esm/index.js";
 
 const client = new HyperionStreamClient({
-    endpoint: 'ws://172.19.125.140:11234',
+    endpoint: 'wss://ultra.eosrio.io',
     debug: true,
     libStream: false
 });
@@ -27,7 +27,7 @@ async function handler(data) {
 client.setAsyncDataHandler(handler);
 
 client.on('empty', () => {
-    console.log('Queue Empty!');
+    // console.log('Queue Empty!');
 });
 
 client.on('libUpdate', (data) => {
@@ -41,37 +41,40 @@ client.on('fork', (data) => {
 await client.connect();
 
 await client.streamActions({
-    contract: 'tibs',
-    action: '*',
-    account: '',
+    contract: 'eosio.token',
+    action: 'transfer',
+    account: '*',
     filters: [],
     read_until: 0,
     start_from: 0
 });
 
-await client.streamActions({
-    contract: 'market.tibs',
-    action: '*',
-    account: '',
-    filters: [],
-    read_until: 0,
-    start_from: 0
-});
-
+// await client.streamActions({
+//     contract: 'market.tibs',
+//     action: '*',
+//     account: '',
+//     filters: [],
+//     read_until: 0,
+//     start_from: 0
+// });
+//
 await client.streamDeltas({
-    code: 'tibs',
+    code: 'eosio',
     scope: '*',
-    table: '*',
+    table: 'unclaimed',
     payer: '',
     read_until: 0,
-    start_from: 0
+    start_from: 0,
+    filters: [
+        {field: "owner", value: "eosriobrazil"},
+    ]
 });
-
-await client.streamDeltas({
-    code: 'market.tibs',
-    scope: '*',
-    table: '*',
-    payer: '',
-    read_until: 0,
-    start_from: 0
-});
+//
+// await client.streamDeltas({
+//     code: 'market.tibs',
+//     scope: '*',
+//     table: '*',
+//     payer: '',
+//     read_until: 0,
+//     start_from: 0
+// });

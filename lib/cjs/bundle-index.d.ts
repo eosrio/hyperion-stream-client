@@ -1,2 +1,2 @@
-export * from './interfaces';
-export * from './hyperion-stream-client';
+export * from './interfaces.js';
+export * from './hyperion-stream-client.js';

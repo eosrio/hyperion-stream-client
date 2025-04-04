@@ -1,4 +1,4 @@
-import { AsyncHandlerFunction, EventListener, HyperionClientOptions, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest } from "./interfaces";
+import { AsyncHandlerFunction, EventListener, HyperionClientOptions, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest } from "./interfaces.js";
 export declare class HyperionStreamClient {
     private socket?;
     private socketURL?;

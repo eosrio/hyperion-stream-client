@@ -1,6 +1,6 @@
 import {HyperionStreamClient} from "../lib/esm/index.js";
 
-const streamingHost = "ws://88.198.18.252:1234"
+const streamingHost = "ws://ultra.eosrio.io"
 const client = new HyperionStreamClient({
     endpoint: streamingHost,
     debug: false,
@@ -18,8 +18,8 @@ const response = await client.streamActions({
     contract: 'eosio',
     action: 'onblock',
     account: '',
-    start_from: 225456007,
-    read_until: 225456010,
+    start_from: 0,
+    read_until: 0,
     filters: [],
 });
 
