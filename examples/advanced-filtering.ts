@@ -1,34 +1,17 @@
-import {HyperionStreamClient, DeltaContent, IncomingData} from "@eosrio/hyperion-stream-client";
+import {HyperionStreamClient, DeltaContent, IncomingData, HyperionStreamEvents} from "@eosrio/hyperion-stream-client";
 
 const client = new HyperionStreamClient({
-    endpoint: 'ws://192.168.0.51:8155/stream',
+    endpoint: 'wss://libre.rioblocks.io/stream',
     debug: true,
     libStream: false
 });
 
-client.on('connect', () => {
-    console.log('connected!');
-});
-
-client.on('disconnect', () => {
-    console.log('disconnected!');
-})
-
-client.on('error', (error) => {
-    console.error('Error:', error);
-});
-
-client.on('empty', () => {
-    console.log('Queue Empty!');
-});
-
-client.on('fork', (data) => {
-    console.log('Fork Event:', data);
-});
-
-client.setAsyncDataHandler(async (data) => {
-    console.log(data);
-})
+try {
+    await client.connect();
+    console.log('Connected!');
+} catch (error: any) {
+    console.error('Connection failed:', error);
+}
 
 const stream = await client.streamDeltas({
     code: 'eosio',
@@ -43,16 +26,10 @@ const stream = await client.streamDeltas({
     ],
 });
 
-try {
-    await client.connect();
-    console.log('Connected!');
-} catch (error: any) {
-    console.error('Connection failed:', error);
-}
-
-// // use the event-based approach
+// use the event-based approach
 // stream.on('message', (data: HyperionStreamEvents) => {
-//     console.log('Received data from event:', data.type, data.reqUUID);
+//     console.log(data);
+//     // console.log('Received data from event:', data.type, data.reqUUID);
 // });
 
 // async iteration
@@ -69,5 +46,24 @@ try {
     }
 })();
 // }, 5000);
+
+const stream2 = await client.streamDeltas({
+    code: 'eosio',
+    scope: 'eosio',
+    table: 'producers',
+    payer: '',
+    start_from: 0,
+    read_until: 0,
+    // filter_op: 'or',
+    filters: [
+        // {field: 'data.owner', value: 'eosriobrazil'}
+    ],
+});
+
+// use the event-based approach
+stream2.on('message', (data: HyperionStreamEvents) => {
+    console.log(data);
+    // console.log('Received data from event:', data.type, data.reqUUID);
+});
 
 
