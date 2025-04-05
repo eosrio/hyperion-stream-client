@@ -1,4 +1,4 @@
-import {HyperionStreamClient, IncomingData, LIBData,} from "@eosrio/hyperion-stream-client";
+import {ActionContent, DeltaContent, HyperionStreamClient, IncomingData, LIBData,} from "@eosrio/hyperion-stream-client";
 
 const client = new HyperionStreamClient({
     endpoint: 'wss://ultra.eosrio.io',
@@ -6,7 +6,7 @@ const client = new HyperionStreamClient({
     libStream: false
 });
 
-async function handler(data: IncomingData) {
+async function handler(data: IncomingData<ActionContent | DeltaContent>) {
     switch (data.type) {
         case 'action': {
             const action = data.content;
