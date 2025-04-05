@@ -1,3 +1,14 @@
+// Type definitions for HyperionStream event handlers
+export type MessageHandler = (msg: any) => void;
+
+export interface HyperionStreamEvents {
+    type: string;
+    reqUUID: string;
+    mode: string;
+    message: any;
+    error: Error;
+}
+
 export interface SavedRequest {
     started: boolean;
     live: boolean;
@@ -41,7 +52,7 @@ export interface StreamDeltasRequest {
     payer: string;
     start_from: number | string;
     read_until: number | string;
-    filter_op: 'and' | 'or';
+    filter_op?: 'and' | 'or';
     filters?: RequestFilter[];
 }
 
@@ -57,7 +68,7 @@ export interface StreamActionsRequest {
     action: string;
     start_from: number | string;
     read_until: number | string;
-    filter_op: 'and' | 'or';
+    filter_op?: 'and' | 'or';
     filters?: RequestFilter[];
 }
 
@@ -94,21 +105,25 @@ export interface ActionContent {
 
 export interface DeltaContent {
     code: string;
-    table: string;
     scope: string;
+    table: string;
+    primary_key: string;
     payer: string;
+    "@timestamp": string;
+    present: number;
     block_num: number;
-    data: any;
+    block_id: string;
+    data: Record<string, any>;
 
     // @ prefixed keys
     [key: string]: any;
 }
 
-export interface IncomingData {
+export interface IncomingData<T> {
     uuid: string,
     type: "action" | "delta";
     mode: "live" | "history";
-    content: ActionContent | DeltaContent
+    content: T
     irreversible: boolean;
 }
 
@@ -125,29 +140,29 @@ export interface ForkData {
     new_id: string;
 }
 
-export interface HyperionStreamEventMap {
+export interface HyperionStreamEventMap<T> {
     [StreamClientEvents.CONNECT]: void;
     [StreamClientEvents.DRAIN]: void;
     [StreamClientEvents.EMPTY]: void;
-    [StreamClientEvents.DATA]: IncomingData;
-    [StreamClientEvents.LIBDATA]: IncomingData;
+    [StreamClientEvents.DATA]: IncomingData<T>;
+    [StreamClientEvents.LIBDATA]: IncomingData<T>;
     [StreamClientEvents.LIBUPDATE]: LIBData;
     [StreamClientEvents.FORK]: ForkData;
     // String versions for convenience
     'connect': void;
     'drain': void;
     'empty': void;
-    'data': IncomingData;
-    'libData': IncomingData;
+    'data': IncomingData<T>;
+    'libData': IncomingData<T>;
     'libUpdate': LIBData;
     'fork': ForkData;
 }
 
 // Generic typed event listener
-export type TypedEventListener<K extends keyof HyperionStreamEventMap> =
-    (data: HyperionStreamEventMap[K]) => void;
+export type TypedEventListener<T, K extends keyof HyperionStreamEventMap<T>> =
+    (data: HyperionStreamEventMap<T>[K]) => void;
 
 
-export type AsyncHandlerFunction = (data: IncomingData) => Promise<void>;
-export type EventData = IncomingData | LIBData | ForkData | void | undefined;
-export type EventListener = (data?: EventData) => void;
+export type AsyncHandlerFunction<T> = (data: IncomingData<T>) => Promise<void>;
+export type EventData<T> = IncomingData<T> | LIBData | ForkData | void | undefined;
+export type EventListener<T> = (data?: EventData<T>) => void;

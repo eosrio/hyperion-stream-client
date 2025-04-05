@@ -1,4 +1,5 @@
-import { AsyncHandlerFunction, EventListener, HyperionClientOptions, HyperionStreamEventMap, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest, TypedEventListener } from "./interfaces.js";
+import { ActionContent, AsyncHandlerFunction, DeltaContent, EventListener, HyperionClientOptions, HyperionStreamEventMap, SavedRequest, StreamActionsRequest, StreamClientEvents, StreamDeltasRequest, TypedEventListener } from "./interfaces.js";
+import { HyperionStream } from "hyperion-stream.js";
 export declare class HyperionStreamClient {
     private socket?;
     private socketURL?;
@@ -12,8 +13,11 @@ export declare class HyperionStreamClient {
     online: boolean;
     savedRequests: SavedRequest[];
     requestMap: Map<string, SavedRequest>;
-    eventListeners: Map<string, EventListener[]>;
-    tempEventListeners: Map<string, EventListener[]>;
+    streams: HyperionStream[];
+    streamMap: Map<string, HyperionStream>;
+    streamMapByUUID: Map<string, HyperionStream>;
+    eventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]>;
+    tempEventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]>;
     /**
      * @typedef {object} BaseOptions
      * @property {string} endpoint - Hyperion API Endpoint
@@ -52,7 +56,7 @@ export declare class HyperionStreamClient {
      */
     private setupSocket;
     /**
-     * Start session. Handlers should be defined before this method is called
+     * Start session
      * @example
      * connect(() => {
      *     console.log('Connection was successful!');
@@ -121,10 +125,11 @@ export declare class HyperionStreamClient {
      */
     private checkLastBlock;
     private debugLog;
-    setAsyncDataHandler(handler: AsyncHandlerFunction): void;
-    setAsyncLibDataHandler(handler: AsyncHandlerFunction): void;
+    setAsyncDataHandler(handler: AsyncHandlerFunction<ActionContent | DeltaContent>): void;
+    setAsyncLibDataHandler(handler: AsyncHandlerFunction<ActionContent | DeltaContent>): void;
     private emit;
-    once<K extends keyof HyperionStreamEventMap>(event: K, listener: TypedEventListener<K>): void;
-    on(event: StreamClientEvents | string, listener: EventListener): void;
-    off(event: StreamClientEvents | string, listener: EventListener): void;
+    once<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(event: K, listener: TypedEventListener<ActionContent | DeltaContent, K>): void;
+    on(event: StreamClientEvents | string, listener: EventListener<ActionContent | DeltaContent>): void;
+    off(event: StreamClientEvents | string, listener: EventListener<ActionContent | DeltaContent>): void;
+    private processPendingStreams;
 }
