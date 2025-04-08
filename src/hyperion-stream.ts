@@ -8,6 +8,37 @@ import {
 } from "./interfaces.js";
 import {Socket} from "socket.io-client";
 
+function replaceMetaFields(content: ActionContent | DeltaContent) {
+    if (content.table) {
+        let metaKey = '@' + content.table;
+        if (content[metaKey + '.data']) {
+            metaKey = metaKey + '.data'
+        }
+        if (content[metaKey]) {
+            const parsedData = content[metaKey];
+            Object.keys(parsedData).forEach((key) => {
+                if (!content.data) {
+                    content.data = {};
+                }
+                content.data[key] = parsedData[key];
+            });
+            delete content[metaKey];
+        }
+    } else if (content.act) {
+        const metaKey = '@' + content.act.name;
+        if (content[metaKey]) {
+            const parsedData = content[metaKey];
+            Object.keys(parsedData).forEach((key) => {
+                if (!content.act.data) {
+                    content.act.data = {};
+                }
+                content.act.data[key] = parsedData[key];
+            });
+            delete content[metaKey];
+        }
+    }
+}
+
 export class HyperionStream {
     private eventHandlers: Map<string, Set<MessageHandler>> = new Map();
     private messages: any[] = []; // Keep for backward compatibility
@@ -181,20 +212,10 @@ export class HyperionStream {
      * @private
      */
     private processDeltaTrace(delta: DeltaContent, mode: "live" | "history") {
-        let metaKey = '@' + delta['table'];
-        if (delta[metaKey + '.data']) {
-            metaKey = metaKey + '.data'
-        }
-        if (delta[metaKey]) {
-            const parsedData = delta[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!delta['data']) {
-                    delta['data'] = {};
-                }
-                delta['data'][key] = parsedData[key];
-            });
-            delete delta[metaKey];
-        }
+        console.log(delta);
+
+        replaceMetaFields(delta);
+
         this.emitMessage({
             irreversible: false,
             mode,
