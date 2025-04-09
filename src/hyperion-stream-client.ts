@@ -750,9 +750,11 @@ export class HyperionStreamClient {
     }
 
     private async processPendingStreams() {
+
         if (!this.socket) {
             return;
         }
+
         for (let stream of this.streams) {
             if (!stream.started) {
                 const resp = await stream.start(this.socket);
@@ -761,6 +763,5 @@ export class HyperionStreamClient {
                 }
             }
         }
-        console.log(this.streamMapByUUID.keys());
     }
 }

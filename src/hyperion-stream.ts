@@ -1,6 +1,6 @@
 import {
     ActionContent,
-    DeltaContent,
+    DeltaContent, HyperionStreamEvent,
     IncomingData,
     MessageHandler,
     StreamActionsRequest,
@@ -9,6 +9,8 @@ import {
 import {Socket} from "socket.io-client";
 
 function replaceMetaFields(content: ActionContent | DeltaContent) {
+
+    // Determine if the content is a delta or action
     if (content.table) {
         let metaKey = '@' + content.table;
         if (content[metaKey + '.data']) {
@@ -66,7 +68,6 @@ export class HyperionStream {
         return await new Promise((resolve, reject) => {
             if (socket) {
                 socket.emit('delta_stream_request', this.request, (response: any) => {
-                    console.log(response);
                     if (response.status === 'OK') {
                         this.live = false;
                         this.started = true;
@@ -155,34 +156,23 @@ export class HyperionStream {
         }
 
         // log the messages queue percentage filled for debugging
-        if (this.messages.length > 0) {
-            const queuePercentage = (this.messages.length / this.maxQueueSize) * 100;
-            console.log(`Queue percentage filled: ${queuePercentage.toFixed(2)}%`);
-        }
+        // if (this.messages.length > 0) {
+        //     const queuePercentage = (this.messages.length / this.maxQueueSize) * 100;
+        //     console.log(`Queue percentage filled: ${queuePercentage.toFixed(2)}%`);
+        // }
     }
 
-    handleIncomingMessage(msg: any) {
+    handleIncomingMessage(msg: HyperionStreamEvent) {
+        console.log(`Incoming message: ${msg.type} - ${msg.mode}`);
         switch (msg.type) {
             case 'delta_trace': {
-                if (msg.messages) {
-                    msg.messages.forEach((message: DeltaContent) => {
-                        this.processDeltaTrace(message, msg.mode);
-                    });
-                } else if (msg.message) {
-                    this.processDeltaTrace(JSON.parse(msg.message), msg.mode);
-                }
+                this.processDeltaTrace(msg);
                 break;
             }
-            // case 'action_trace': {
-            //     if (msg.messages) {
-            //         msg.messages.forEach((message: ActionContent) => {
-            //             this.processActionTrace(message, msg.mode, msg.reqUUID);
-            //         });
-            //     } else if (msg.message) {
-            //         this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-            //     }
-            //     break;
-            // }
+            case 'action_trace': {
+                this.processActionTrace(msg);
+                break;
+            }
         }
     }
 
@@ -206,26 +196,30 @@ export class HyperionStream {
 
     /**
      * Internal method to parse a delta streaming trace
-     * @param delta
-     * @param mode
-     * @param uuid
      * @private
+     * @param streamEvent
      */
-    private processDeltaTrace(delta: DeltaContent, mode: "live" | "history") {
-        console.log(delta);
-
+    private processDeltaTrace(streamEvent: HyperionStreamEvent) {
+        const delta = JSON.parse(streamEvent.message);
         replaceMetaFields(delta);
-
         this.emitMessage({
             irreversible: false,
-            mode,
+            mode: streamEvent.mode,
             type: 'delta',
             content: delta,
             uuid: this.reqUUID
         } as IncomingData<DeltaContent>);
     }
 
-    // private processActionTrace(message: ActionContent, mode: any, reqUUID: any) {
-    //
-    // }
+    private processActionTrace(streamEvent: HyperionStreamEvent) {
+        const action = JSON.parse(streamEvent.message);
+        replaceMetaFields(action);
+        this.emitMessage({
+            irreversible: false,
+            mode: streamEvent.mode,
+            type: 'action',
+            content: action,
+            uuid: this.reqUUID
+        } as IncomingData<ActionContent>);
+    }
 }

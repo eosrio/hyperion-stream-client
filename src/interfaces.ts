@@ -1,10 +1,10 @@
 // Type definitions for HyperionStream event handlers
 export type MessageHandler = (msg: any) => void;
 
-export interface HyperionStreamEvents {
+export interface HyperionStreamEvent {
     type: string;
     reqUUID: string;
-    mode: string;
+    mode: "live" | "history";
     message: any;
     error: Error;
 }
