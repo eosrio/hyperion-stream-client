@@ -1,11 +1,14 @@
 // Type definitions for HyperionStream event handlers
-export type MessageHandler = (msg: any) => void;
+// export type MessageHandler = (msg: IncomingData<ActionContent | DeltaContent>) => void;
+export type MessageHandler<T = any> = (data: T) => void;
+
 
 export interface HyperionStreamEvent {
     type: string;
     reqUUID: string;
     mode: "live" | "history";
-    message: any;
+    message?: string;
+    messages?: (ActionContent | DeltaContent)[];
     error: Error;
 }
 
@@ -156,6 +159,13 @@ export interface HyperionStreamEventMap<T> {
     'libData': IncomingData<T>;
     'libUpdate': LIBData;
     'fork': ForkData;
+}
+
+export interface EventMap {
+    'start': { status: string, reqUUID: string, startingBlock: number };
+    'message': IncomingData<ActionContent | DeltaContent>;
+    'error': any;
+    // Add other events as needed
 }
 
 // Generic typed event listener

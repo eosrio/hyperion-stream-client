@@ -269,71 +269,77 @@ export class HyperionStreamClient {
     }
 
     private handleSocketMessage(msg: any) {
-        let trackedRequest;
+
+        // let trackedRequest;
         let trackedStream;
+
         if (msg.reqUUID) {
-            trackedRequest = this.requestMap.get(msg.reqUUID);
+            // trackedRequest = this.requestMap.get(msg.reqUUID);
             trackedStream = this.streamMapByUUID.get(msg.reqUUID);
         }
 
         if (!trackedStream) {
-            console.log('Untracked stream, something went wrong!');
+            console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
+            // this.requestServerCancel(msg.reqUUID);
             return;
         }
 
         trackedStream.handleIncomingMessage(msg);
 
-        if (msg.type === 'trace_init') {
-            if (trackedRequest) {
-                if (!trackedRequest.firstReceivedBlock) {
-                    this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} docs)`);
-                    trackedRequest.firstReceivedBlock = msg.first_block;
-                    trackedRequest.historyResults = msg.results;
-                } else {
-                    this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} docs)`);
-                    // increment total blocks in the case of a fill request
-                    trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
-                }
-            } else {
-                console.log('Untracked request, something went wrong!');
-            }
-        }
+        // console.log("Stream ->>", trackedStream.started);
+        // console.log("Request ->>", trackedRequest);
 
-        if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg.messages)) {
-            if (msg['error']) {
-                console.log(msg['error']);
-                this.socket?.close();
-                return;
-            }
-
-            if (msg.messages && trackedRequest) {
-                trackedRequest.filtered += msg.filtered;
-                console.log(msg.type, msg.mode, msg.reqUUID, msg.filtered, msg.messages.length);
-            }
-
-            switch (msg.type) {
-                case 'delta_trace': {
-                    if (msg.messages) {
-                        msg.messages.forEach((message: DeltaContent) => {
-                            this.processDeltaTrace(message, msg.mode, msg.reqUUID);
-                        });
-                    } else if (msg.message) {
-                        this.processDeltaTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-                    }
-                    break;
-                }
-                case 'action_trace': {
-                    if (msg.messages) {
-                        msg.messages.forEach((message: ActionContent) => {
-                            this.processActionTrace(message, msg.mode, msg.reqUUID);
-                        });
-                    } else if (msg.message) {
-                        this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-                    }
-                    break;
-                }
-            }
-        }
+        // if (msg.type === 'trace_init') {
+        //     if (trackedRequest) {
+        //         if (!trackedRequest.firstReceivedBlock) {
+        //             this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} docs)`);
+        //             trackedRequest.firstReceivedBlock = msg.first_block;
+        //             trackedRequest.historyResults = msg.results;
+        //         } else {
+        //             this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} docs)`);
+        //             // increment total blocks in the case of a fill request
+        //             trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
+        //         }
+        //     } else {
+        //         console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
+        //     }
+        // }
+        //
+        // if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg.messages)) {
+        //     if (msg['error']) {
+        //         console.log(msg['error']);
+        //         this.socket?.close();
+        //         return;
+        //     }
+        //
+        //     if (msg.messages && trackedRequest) {
+        //         trackedRequest.filtered += msg.filtered;
+        //         console.log(msg.type, msg.mode, msg.reqUUID, msg.filtered, msg.messages.length);
+        //     }
+        //
+        //     switch (msg.type) {
+        //         case 'delta_trace': {
+        //             if (msg.messages) {
+        //                 msg.messages.forEach((message: DeltaContent) => {
+        //                     this.processDeltaTrace(message, msg.mode, msg.reqUUID);
+        //                 });
+        //             } else if (msg.message) {
+        //                 this.processDeltaTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
+        //             }
+        //             break;
+        //         }
+        //         case 'action_trace': {
+        //             if (msg.messages) {
+        //                 msg.messages.forEach((message: ActionContent) => {
+        //                     this.processActionTrace(message, msg.mode, msg.reqUUID);
+        //                 });
+        //             } else if (msg.message) {
+        //                 this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
+        //             }
+        //             break;
+        //         }
+        //     }
+        // }
     }
 
     /**
@@ -418,70 +424,70 @@ export class HyperionStreamClient {
         await this.setupSocket();
     }
 
-    /**
-     * Internal method to parse an action streaming trace
-     * @param action
-     * @param mode
-     * @param uuid
-     * @private
-     */
-    private processActionTrace(action: ActionContent, mode: "live" | "history", uuid: string) {
-        const metaKey = '@' + action['act'].name;
-        if (action[metaKey]) {
-            const parsedData = action[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!action['act']['data']) {
-                    action['act']['data'] = {};
-                }
-                action['act']['data'][key] = parsedData[key];
-            });
-            delete action[metaKey];
-        }
-        if (this.dataQueue) {
-            this.dataQueue.push({
-                uuid: uuid,
-                type: 'action',
-                mode: mode,
-                content: action,
-                irreversible: false
-            }).catch(console.log);
-            this.lastReceivedBlock = action['block_num'];
-        }
-    }
+    // /**
+    //  * Internal method to parse an action streaming trace
+    //  * @param action
+    //  * @param mode
+    //  * @param uuid
+    //  * @private
+    //  */
+    // private processActionTrace(action: ActionContent, mode: "live" | "history", uuid: string) {
+    //     const metaKey = '@' + action['act'].name;
+    //     if (action[metaKey]) {
+    //         const parsedData = action[metaKey];
+    //         Object.keys(parsedData).forEach((key) => {
+    //             if (!action['act']['data']) {
+    //                 action['act']['data'] = {};
+    //             }
+    //             action['act']['data'][key] = parsedData[key];
+    //         });
+    //         delete action[metaKey];
+    //     }
+    //     if (this.dataQueue) {
+    //         this.dataQueue.push({
+    //             uuid: uuid,
+    //             type: 'action',
+    //             mode: mode,
+    //             content: action,
+    //             irreversible: false
+    //         }).catch(console.log);
+    //         this.lastReceivedBlock = action['block_num'];
+    //     }
+    // }
 
-    /**
-     * Internal method to parse a delta streaming trace
-     * @param delta
-     * @param mode
-     * @param uuid
-     * @private
-     */
-    private processDeltaTrace(delta: DeltaContent, mode: "live" | "history", uuid: string) {
-        let metaKey = '@' + delta['table'];
-        if (delta[metaKey + '.data']) {
-            metaKey = metaKey + '.data'
-        }
-        if (delta[metaKey]) {
-            const parsedData = delta[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!delta['data']) {
-                    delta['data'] = {};
-                }
-                delta['data'][key] = parsedData[key];
-            });
-            delete delta[metaKey];
-        }
-        if (this.dataQueue) {
-            this.dataQueue.push({
-                uuid: uuid,
-                type: 'delta',
-                mode: mode,
-                content: delta,
-                irreversible: false
-            }).catch(console.log);
-            this.lastReceivedBlock = delta['block_num'];
-        }
-    }
+    // /**
+    //  * Internal method to parse a delta streaming trace
+    //  * @param delta
+    //  * @param mode
+    //  * @param uuid
+    //  * @private
+    //  */
+    // private processDeltaTrace(delta: DeltaContent, mode: "live" | "history", uuid: string) {
+    //     let metaKey = '@' + delta['table'];
+    //     if (delta[metaKey + '.data']) {
+    //         metaKey = metaKey + '.data'
+    //     }
+    //     if (delta[metaKey]) {
+    //         const parsedData = delta[metaKey];
+    //         Object.keys(parsedData).forEach((key) => {
+    //             if (!delta['data']) {
+    //                 delta['data'] = {};
+    //             }
+    //             delta['data'][key] = parsedData[key];
+    //         });
+    //         delete delta[metaKey];
+    //     }
+    //     if (this.dataQueue) {
+    //         this.dataQueue.push({
+    //             uuid: uuid,
+    //             type: 'delta',
+    //             mode: mode,
+    //             content: delta,
+    //             irreversible: false
+    //         }).catch(console.log);
+    //         this.lastReceivedBlock = delta['block_num'];
+    //     }
+    // }
 
     /**
      * Replay cached requests
@@ -506,24 +512,6 @@ export class HyperionStreamClient {
             }
         }
     }
-
-    /**
-     * Request filter definition
-     * @typedef {Object} requestFilter
-     * @property {string} field - Filter Field (ex. "act.data.from")
-     * @property {string} value - Filter value
-     */
-
-    /**
-     * Action request definition
-     * @typedef {Object} StreamActionsRequest
-     * @property {string} contract - Contract name
-     * @property {string} account - Account to filter for
-     * @property {string} action - Action name to filter
-     * @property {[RequestFilter]} filters - Array of filters
-     * @property {number} [start_from=0] - Starting block number
-     * @property {number} [read_until=0] - Read until this block number
-     */
 
     /**
      * Send a request for a filtered action traces stream
@@ -566,34 +554,20 @@ export class HyperionStreamClient {
     }
 
     /**
-     * Delta request definition
-     * @typedef {Object} StreamDeltasRequest
-     * @property {string} code - Contract name
-     * @property {string} table - Table
-     * @property {string} scope - Scope
-     * @property {string} payer - Payer account
-     * @property {number} [start_from=0] - Starting block number
-     * @property {number} [read_until=0] - Read until this block number
-     */
-
-    /**
      * Send a request for a filtered delta traces stream
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    async streamDeltas(request: StreamDeltasRequest): Promise<any> {
-
+    async streamDeltas(request: StreamDeltasRequest): Promise<HyperionStream> {
 
         // check for duplicate requests
         const key = 'delta:' + request.code + ':' + request.table + ':' + request.scope + ':' + request.payer;
+        console.log(`StreamDeltas: ${key}`);
         if (this.streamMap.has(key)) {
-            return {
-                status: 'ERROR',
-                error: 'Similar stream request already exists'
-            };
+            throw new Error('Similar stream request already exists');
         }
 
         // create stream instance
-        const stream = new HyperionStream('delta', request);
+        const stream = new HyperionStream(this, 'delta', request);
         this.streams.push(stream);
         this.streamMap.set(key, stream);
 
@@ -607,46 +581,6 @@ export class HyperionStreamClient {
         } else {
             return stream;
         }
-
-        // if (this.socket && this.socket.connected) {
-        //     try {
-        //         await this.checkLastBlock(request);
-        //     } catch (e: any) {
-        //         return {status: 'ERROR', error: e.message};
-        //     }
-        //     return new Promise((resolve, reject) => {
-        //         if (this.socket) {
-        //
-        //             if (!request.filters) {
-        //                 request.filters = [];
-        //             }
-        //
-        //             this.socket.emit('delta_stream_request', request, (response: any) => {
-        //                 this.debugLog(response);
-        //                 if (response.status === 'OK') {
-        //                     const reqObj = {
-        //                         type: 'delta',
-        //                         live: false,
-        //                         started: false,
-        //                         req: request,
-        //                         deliveryCounter: 0,
-        //                         filtered: 0,
-        //                         pendingMessages: []
-        //                     };
-        //                     this.savedRequests.push(reqObj);
-        //                     this.requestMap.set(response.reqUUID, reqObj);
-        //                     response['startingBlock'] = request.start_from;
-        //                     resolve(response);
-        //                 }
-        //                 resolve(response);
-        //             });
-        //         } else {
-        //             reject({status: false, error: 'socket was not created'});
-        //         }
-        //     });
-        // } else {
-        //     throw new Error('Client is not connected! Please call connect before sending requests');
-        // }
     }
 
 
@@ -762,6 +696,25 @@ export class HyperionStreamClient {
                     this.streamMapByUUID.set(resp.reqUUID, stream);
                 }
             }
+        }
+    }
+
+    stop(reqUUID: string) {
+        console.log('Stopping stream:', reqUUID);
+        this.requestServerCancel(reqUUID);
+    }
+
+    private requestServerCancel(reqUUID: string) {
+        if (this.socket) {
+            this.socket.emit('cancel_stream_request', {reqUUID}, (response: any) => {
+                console.log('Cancel response:', response);
+                this.streamMapByUUID.delete(reqUUID);
+                this.streams.splice(this.streams.findIndex(s => s.reqUUID === reqUUID), 1);
+                console.log('Stream removed from map:', reqUUID);
+                console.log(this.streams.map(s => s.reqUUID));
+            });
+        } else {
+            console.error('Socket not connected');
         }
     }
 }
