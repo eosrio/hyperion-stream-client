@@ -13,53 +13,74 @@ try {
     console.error('Connection failed:', error);
 }
 
-const stream = await client.streamDeltas({
-    code: 'eosio',
-    scope: 'eosio',
-    table: 'global',
+// const globalStream = await client.streamDeltas({
+//     code: 'eosio',
+//     scope: 'eosio',
+//     table: 'global',
+//     payer: '',
+//     start_from: 0,
+//     read_until: 0,
+//     // filter_op: 'or',
+//     filters: [
+//         // {field: 'data.owner', value: 'eosriobrazil'}
+//     ],
+// });
+
+const producerStream = await client.streamDeltas({
+    code: 'eosio.token',
+    scope: '',
+    table: '*',
     payer: '',
-    start_from: -10,
+    start_from: 0,
     read_until: 0,
     // filter_op: 'or',
     filters: [
         // {field: 'data.owner', value: 'eosriobrazil'}
     ],
 });
+//
+// const payerStream = await client.streamDeltas({
+//     code: '',
+//     scope: '',
+//     table: '',
+//     payer: 'rioblocks',
+//     start_from: 0,
+//     read_until: 0,
+//     filters: [],
+// });
 
-await client.streamDeltas({
-    code: 'eosio',
-    scope: 'eosio',
-    table: 'producers',
-    payer: '',
-    start_from: -10,
-    read_until: 0,
-    // filter_op: 'or',
-    filters: [
-        // {field: 'data.owner', value: 'eosriobrazil'}
-    ],
-});
-
-stream.on('start', (response) => {
-    console.log(`Stream connected - ${response.reqUUID} - startingBlock: ${response.startingBlock}`);
-});
-
-stream.on('error', (error) => {
-    console.error('Stream error:', error);
-})
-
-let liveCount = 0;
-
-stream.on('message', (data) => {
+producerStream.on('message', (data) => {
     const content = data.content;
-    console.log(`Received ${data.mode} data from stream event at block`, content.block_num);
-    if (data.mode === 'live') {
-        liveCount++;
-        if (liveCount > 3) {
-            console.log('Stopping live stream...');
-            stream.stop();
-        }
-    }
+    console.log(content);
+    console.log(`Received ${data.mode} data from payer stream at block`, content.block_num, content.payer);
 })
+
+// payerStream.on('message', (data) => {
+//     const content = data.content;
+//     console.log(`Received ${data.mode} data from payer stream at block`, content.block_num, content.payer);
+// })
+//
+// globalStream.on('start', (response) => {
+//     console.log(`Stream connected - ${response.reqUUID} - startingBlock: ${response.startingBlock}`);
+// });
+//
+// globalStream.on('error', (error) => {
+//     console.error('Stream error:', error);
+// })
+//
+// let liveCount = 0;
+//
+// globalStream.on('message', (data) => {
+//     const content = data.content;
+//     console.log(`Received ${data.mode} data from global stream at block`, content.block_num, content.payer);
+//     // if (data.mode === 'live') {
+//     //     liveCount++;
+//     //     if (liveCount > 3) {
+//     //         console.log('Stopping live stream...');
+//     //         stream.stop();
+//     //     }
+//     // }
+// })
 
 // use the event-based approach
 // stream.on('message', (data: HyperionStreamEvents) => {

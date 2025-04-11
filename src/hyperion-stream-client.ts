@@ -270,21 +270,24 @@ export class HyperionStreamClient {
 
     private handleSocketMessage(msg: any) {
 
-        // let trackedRequest;
-        let trackedStream;
-
-        if (msg.reqUUID) {
-            // trackedRequest = this.requestMap.get(msg.reqUUID);
-            trackedStream = this.streamMapByUUID.get(msg.reqUUID);
+        if (msg.targets) {
+            msg.targets.forEach((target: string) => {
+                this.streamMapByUUID.get(target)?.handleIncomingMessage(msg);
+            });
         }
 
-        if (!trackedStream) {
-            console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
-            // this.requestServerCancel(msg.reqUUID);
-            return;
-        }
-
-        trackedStream.handleIncomingMessage(msg);
+        // if (msg.reqUUID) {
+        //     // trackedRequest = this.requestMap.get(msg.reqUUID);
+        //     trackedStream = this.streamMapByUUID.get(msg.reqUUID);
+        // }
+        //
+        // if (!trackedStream) {
+        //     console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
+        //     // this.requestServerCancel(msg.reqUUID);
+        //     return;
+        // }
+        //
+        // trackedStream.handleIncomingMessage(msg);
 
         // console.log("Stream ->>", trackedStream.started);
         // console.log("Request ->>", trackedRequest);
@@ -356,15 +359,11 @@ export class HyperionStreamClient {
                     path: '/stream'
                 });
                 this.socket.on('connect', () => {
-
                     this.debugLog('connected');
                     this.online = true;
                     this.emit(StreamClientEvents.CONNECT);
-
                     this.processPendingStreams();
-
                     this.resendRequests().catch(console.log);
-
                     resolve();
                 });
 
