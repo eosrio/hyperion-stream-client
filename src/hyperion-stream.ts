@@ -154,6 +154,10 @@ export class HyperionStream {
         }
     }
 
+    // enqueueToSortedBuffer(msg: IncomingData<ActionContent | DeltaContent>): void {
+    //
+    // }
+
     emitMessage(msg: IncomingData<ActionContent | DeltaContent>): void {
 
         // Emit the event
@@ -184,6 +188,11 @@ export class HyperionStream {
         switch (msg.type) {
             case 'delta_trace': {
                 this.processDeltaTrace(msg);
+                break;
+            }
+            case 'delta_history_end': {
+                console.log('History end');
+                console.log(msg);
                 break;
             }
             case 'action_trace': {
