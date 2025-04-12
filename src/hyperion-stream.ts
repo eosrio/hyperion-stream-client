@@ -86,7 +86,9 @@ export class HyperionStream {
                 socket.emit('delta_stream_request', this.request, (response: any) => {
                     // console.log(response);
                     if (response.status === 'OK') {
-                        this.live = false;
+
+                        // flag the request mode as live or history
+                        this.live = !(this.request.start_from && parseInt(this.request.start_from.toString()) > 0);
                         this.started = true;
                         this.reqUUID = response.reqUUID;
                         this.deliveryCounter = 0;
@@ -168,10 +170,17 @@ export class HyperionStream {
 
     emitMessage(msg: IncomingData<ActionContent | DeltaContent>): void {
 
+        // live messages received during history replay must be enqueued
+        console.log(`Incoming message: ${msg.type} - ${msg.mode} ~ Global Live: ${this.live}`);
+        if (!this.live && msg.mode === 'live') {
+            // history mode - enqueue live messages
+            this.pendingMessages.push(msg);
+            return;
+        }
+
         // record the last block number
         if (msg.content.block_num) {
             this.lastBlockReceived = msg.content.block_num;
-            // console.log(`Last block received: ${this.lastBlockReceived}`);
         }
 
         // Emit the event
@@ -206,6 +215,7 @@ export class HyperionStream {
             }
             case 'delta_history_end': {
                 console.log('History end');
+                this.processPendingMessages();
                 break;
             }
             case 'action_trace': {
@@ -287,5 +297,16 @@ export class HyperionStream {
                 uuid: this.reqUUID
             } as IncomingData<ActionContent>);
         }
+    }
+
+    async processPendingMessages() {
+        while (this.pendingMessages.length > 0) {
+            const msg = this.pendingMessages.shift();
+            if (msg) {
+                this.emitMessage(msg);
+            }
+            console.log(`Pending messages: ${this.pendingMessages.length}`);
+        }
+        this.live = true;
     }
 }
