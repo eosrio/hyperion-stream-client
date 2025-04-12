@@ -54,7 +54,14 @@ export class HyperionStreamClient {
     eventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
     tempEventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
     lastConnectedId?: string;
-    private disconnectedOnce = false;
+    lastIrreversibleBlock = 0;
+    libTimestamp: number = 0;
+    libOffsetArray: number[] = [];
+
+    // private disconnectedOnce = false;
+    private libMonitoringTimeout: any | null = null;
+
+    chainId: string = '';
 
     /**
      * Construct a new streaming client
@@ -231,6 +238,29 @@ export class HyperionStreamClient {
     }
 
     private handleLibUpdate(msg: any) {
+        if (msg.block_num) {
+            if (this.lastIrreversibleBlock > 0 && this.libTimestamp > 0) {
+                this.libOffsetArray.push(Date.now() - this.libTimestamp);
+                if (this.libOffsetArray.length > 10) {
+                    this.libOffsetArray.shift();
+                }
+            }
+            this.lastIrreversibleBlock = msg.block_num;
+            this.libTimestamp = Date.now();
+            if (this.libMonitoringTimeout) {
+                clearTimeout(this.libMonitoringTimeout);
+            }
+            if (this.libOffsetArray.length > 1) {
+                const averageOffset = this.libOffsetArray.reduce((a, b) => a + b, 0) / this.libOffsetArray.length;
+                const nextLibLimit = averageOffset + 5000;
+                if (this.lastIrreversibleBlock > 0) {
+                    this.libMonitoringTimeout = setTimeout(() => {
+                        console.error(`Last irreversible block is stuck for ${nextLibLimit}ms`);
+                    }, nextLibLimit);
+                }
+            }
+        }
+
         if (this.options.libStream) {
             while (this.reversibleBuffer.length > 0) {
                 if (this.reversibleBuffer[0]) {
@@ -265,16 +295,28 @@ export class HyperionStreamClient {
         }
     }
 
-    private handleSocketMessage(msg: any) {
+    private handleSocketMessage(msg: any, ackCallback?: (ackResponse: any) => void) {
 
         if (msg.targets) {
             msg.targets.forEach((target: string) => {
                 this.streamMapByUUID.get(target)?.handleIncomingMessage(msg);
             });
+            if (ackCallback) {
+                ackCallback({status: true});
+            }
         }
 
         if (msg.reqUUID) {
-            this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg);
+
+            console.log(`Received message for ${msg.reqUUID} (${msg.type})`);
+
+            const trackedStream = this.streamMapByUUID.get(msg.reqUUID);
+            if (!trackedStream) {
+                console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
+                return;
+            }
+
+            this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg, ackCallback);
         }
 
         //
@@ -362,31 +404,60 @@ export class HyperionStreamClient {
                     }
                 });
 
-                if (!this.disconnectedOnce) {
-                    setTimeout(() => {
-                        this.socket?.disconnect();
-                        this.disconnectedOnce = true;
-                        setTimeout(() => {
-                            this.setupSocket();
-                        }, 2000);
-                    }, 3000);
-                }
-
-                this.socket.on('reconnect', () => {
-                    console.log('Reconnected to server');
-                })
+                // if (!this.disconnectedOnce) {
+                //     setTimeout(() => {
+                //         this.socket?.disconnect();
+                //         this.disconnectedOnce = true;
+                //         setTimeout(() => {
+                //             this.setupSocket();
+                //         }, 2000);
+                //     }, 3000);
+                // }
 
                 this.socket.on('connect', () => {
+                    if (this.lastConnectedId) {
+                        this.debugLog(`Reconnecting to ${this.socketURL} - sending previous socket id: ${this.lastConnectedId})`);
+                        this.socket?.emit('reconnect', {last_id: this.lastConnectedId});
+                    }
                     this.lastConnectedId = this.socket?.id;
-                    this.debugLog('connected');
+                    this.debugLog(`Connected - socket id: ${this.socket?.id}`);
                     this.online = true;
                     this.emit(StreamClientEvents.CONNECT);
                     this.processPendingStreams();
                     resolve();
                 });
 
+                this.socket.on('resend_requests', async (args) => {
+                    try {
+                        if (args.last_id) {
+                            // call streams to resend requests
+                            this.debugLog(`Resending requests...`);
+                            for (const stream of this.streams) {
+                                if (this.socket) {
+                                    this.streamMapByUUID.delete(stream.reqUUID);
+
+                                    // continue from the last block received
+                                    if (stream.lastBlockReceived > 0) {
+                                        stream.request.start_from = stream.lastBlockReceived + 1;
+                                    }
+
+                                    const resp = await stream.start(this.socket);
+                                    if (resp.status === 'OK') {
+                                        this.streamMapByUUID.set(resp.reqUUID, stream);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: any) {
+                        console.log(`Error resending requests: ${e.message}`);
+                    }
+                });
+
                 this.socket.on('handshake', (msg) => {
                     this.debugLog('handshake', msg);
+                    if (msg.chain_id) {
+                        this.chainId = msg.chain_id;
+                    }
                 });
 
                 this.socket.on('error', (msg) => {
@@ -399,9 +470,8 @@ export class HyperionStreamClient {
                     this.emit(StreamClientEvents.FORK, msg);
                 });
 
-                this.socket.on('message', (msg: any) => {
-                    // console.log('Main Socket:', msg);
-                    this.handleSocketMessage(msg);
+                this.socket.on('message', (msg: any, ackCallback?: (data: any) => void) => {
+                    this.handleSocketMessage(msg, ackCallback);
                 });
 
                 this.socket.on('status', (status) => {
@@ -585,7 +655,7 @@ export class HyperionStreamClient {
 
         // check for duplicate requests
         const key = 'delta:' + request.code + ':' + request.table + ':' + request.scope + ':' + request.payer;
-        console.log(`StreamDeltas: ${key}`);
+        this.debugLog(`StreamDeltas: ${key}`);
         if (this.streamMap.has(key)) {
             throw new Error('Similar stream request already exists');
         }
@@ -641,7 +711,7 @@ export class HyperionStreamClient {
         }
     }
 
-    private debugLog(...args: any[]): void {
+    debugLog(...args: any[]): void {
         if (this.options.debug) {
             console.log('[hyperion:debug]', ...args);
         }

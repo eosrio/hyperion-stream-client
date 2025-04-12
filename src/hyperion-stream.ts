@@ -8,47 +8,17 @@ import {
 } from "./interfaces.js";
 import {Socket} from "socket.io-client";
 import {HyperionStreamClient} from "./hyperion-stream-client.js";
+import {replaceMetaFields} from "./functions.js";
+import {QueueObject, queue} from "async";
 
-function replaceMetaFields(content: ActionContent | DeltaContent) {
-
-    // Determine if the content is a delta or action
-    if (content.table) {
-        let metaKey = '@' + content.table;
-        if (content[metaKey + '.data']) {
-            metaKey = metaKey + '.data'
-        }
-        if (content[metaKey]) {
-            const parsedData = content[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!content.data) {
-                    content.data = {};
-                }
-                content.data[key] = parsedData[key];
-            });
-            delete content[metaKey];
-        }
-    } else if (content.act) {
-        const metaKey = '@' + content.act.name;
-        if (content[metaKey]) {
-            const parsedData = content[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!content.act.data) {
-                    content.act.data = {};
-                }
-                content.act.data[key] = parsedData[key];
-            });
-            delete content[metaKey];
-        }
-    }
-}
 
 export class HyperionStream {
 
     private eventHandlers: Map<string, Set<MessageHandler<any>>> = new Map();
     private messages: any[] = []; // Keep for backward compatibility
-    private resolveNext?: (value: IteratorResult<any>) => void;
+    private resolveNext?: (value: ActionContent | DeltaContent | null) => void;
     private isIteratorActive: boolean = false; // Track if iterator is being consumed
-    private maxQueueSize: number = 10; // Default max queue size when iterator isn't used
+    private maxQueueSize: number = 1000; // Default max queue size when iterator isn't used
     request: StreamActionsRequest | StreamDeltasRequest;
     type: 'action' | 'delta';
     live: boolean = false;
@@ -63,6 +33,10 @@ export class HyperionStream {
     private clientRef: HyperionStreamClient;
     lastBlockReceived: number = 0;
 
+    // live data queue
+    private liveQueue: QueueObject<IncomingData<ActionContent | DeltaContent>>;
+    private currentAckCallback?: (ackResponse: any) => void;
+
     constructor(
         client: HyperionStreamClient,
         type: 'action' | 'delta',
@@ -71,6 +45,11 @@ export class HyperionStream {
         this.clientRef = client;
         this.request = request;
         this.type = type;
+        this.liveQueue = queue((task: IncomingData<ActionContent | DeltaContent>, taskCallback) => {
+            // console.log('Processing task:', task.type, task.mode);
+            this.emitMessage(task);
+            taskCallback();
+        });
     }
 
     async start(socket: Socket): Promise<any> {
@@ -83,12 +62,19 @@ export class HyperionStream {
 
         return await new Promise((resolve, reject) => {
             if (socket) {
+
+                // flag the request mode as live or history
+                // pause the live queue if the request is for history
+                this.live = !(this.request.start_from && parseInt(this.request.start_from.toString()) !== 0);
+
+                if (!this.live) {
+                    this.liveQueue.pause();
+                }
+
+                console.log(`Requesting deltas from block: ${this.request.start_from} until: ${this.request.read_until}`);
                 socket.emit('delta_stream_request', this.request, (response: any) => {
                     // console.log(response);
                     if (response.status === 'OK') {
-
-                        // flag the request mode as live or history
-                        this.live = !(this.request.start_from && parseInt(this.request.start_from.toString()) > 0);
                         this.started = true;
                         this.reqUUID = response.reqUUID;
                         this.deliveryCounter = 0;
@@ -164,19 +150,10 @@ export class HyperionStream {
         }
     }
 
-    // enqueueToSortedBuffer(msg: IncomingData<ActionContent | DeltaContent>): void {
-    //
-    // }
-
     emitMessage(msg: IncomingData<ActionContent | DeltaContent>): void {
 
         // live messages received during history replay must be enqueued
-        console.log(`Incoming message: ${msg.type} - ${msg.mode} ~ Global Live: ${this.live}`);
-        if (!this.live && msg.mode === 'live') {
-            // history mode - enqueue live messages
-            this.pendingMessages.push(msg);
-            return;
-        }
+        // console.log(`Incoming message: ${msg.type} - ${msg.mode} ~ Global Live: ${this.live}`);
 
         // record the last block number
         if (msg.content.block_num) {
@@ -206,16 +183,31 @@ export class HyperionStream {
         }
     }
 
-    handleIncomingMessage(msg: HyperionStreamEvent) {
+    handleIncomingMessage(msg: HyperionStreamEvent, ackCallback?: (ackResponse: any) => void) {
         // console.log(`Incoming message: ${msg.type} - ${msg.mode}`);
+        if (typeof ackCallback === 'function') {
+            this.currentAckCallback = ackCallback;
+        }
+
         switch (msg.type) {
+            case 'trace_init': {
+                console.log(msg);
+                break;
+            }
             case 'delta_trace': {
                 this.processDeltaTrace(msg);
                 break;
             }
             case 'delta_history_end': {
-                console.log('History end');
-                this.processPendingMessages();
+                this.clientRef.debugLog('History end');
+                if (!this.request.ignore_live) {
+                    this.liveQueue.resume();
+                } else {
+                    this.isIteratorActive = false;
+                    if (this.resolveNext) {
+                        this.resolveNext(null);
+                    }
+                }
                 break;
             }
             case 'action_trace': {
@@ -225,13 +217,18 @@ export class HyperionStream {
         }
     }
 
-    async* [Symbol.asyncIterator](): AsyncIterator<ActionContent | DeltaContent> {
+    async* [Symbol.asyncIterator](): AsyncIterator<ActionContent | DeltaContent | null> {
         const isActive = true;
         while (isActive) {
             if (this.messages.length > 0) {
-                const next = this.messages.shift();
-                yield next;
+                yield this.messages.shift();
             } else {
+                // If the iterator is not being used, wait for the next message
+                // When the queue is empty we can call the ack callback
+                if (this.currentAckCallback) {
+                    this.currentAckCallback({status: true});
+                    this.currentAckCallback = undefined;
+                }
                 yield await new Promise<any>((resolve) => {
                     this.resolveNext = resolve;
                 });
@@ -239,12 +236,8 @@ export class HyperionStream {
         }
     }
 
-    /**
-     * Internal method to parse a delta streaming trace
-     * @private
-     * @param streamEvent
-     */
     private processDeltaTrace(streamEvent: HyperionStreamEvent) {
+
         if (streamEvent.messages && streamEvent.messages.length > 0) {
             for (const delta of streamEvent.messages) {
                 replaceMetaFields(delta);
@@ -259,13 +252,16 @@ export class HyperionStream {
         } else if (streamEvent.message) {
             const delta = JSON.parse(streamEvent.message);
             replaceMetaFields(delta);
-            this.emitMessage({
+            this.clientRef.debugLog(`Enqueuing LIVE delta trace: ${delta.block_num}`);
+            this.liveQueue.push({
                 irreversible: false,
                 mode: streamEvent.mode,
                 type: 'delta',
                 content: delta,
                 uuid: this.reqUUID
-            } as IncomingData<DeltaContent>);
+            } as IncomingData<DeltaContent>).catch(reason => {
+                console.error('Error processing delta trace:', reason);
+            });
         }
     }
 
@@ -297,16 +293,5 @@ export class HyperionStream {
                 uuid: this.reqUUID
             } as IncomingData<ActionContent>);
         }
-    }
-
-    async processPendingMessages() {
-        while (this.pendingMessages.length > 0) {
-            const msg = this.pendingMessages.shift();
-            if (msg) {
-                this.emitMessage(msg);
-            }
-            console.log(`Pending messages: ${this.pendingMessages.length}`);
-        }
-        this.live = true;
     }
 }
