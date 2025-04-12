@@ -61,6 +61,7 @@ export class HyperionStream {
     started: boolean = false;
     reqUUID = '';
     private clientRef: HyperionStreamClient;
+    lastBlockReceived: number = 0;
 
     constructor(
         client: HyperionStreamClient,
@@ -73,10 +74,17 @@ export class HyperionStream {
     }
 
     async start(socket: Socket): Promise<any> {
+
+        if (this.request.replayOnReconnect && this.started) {
+            this.request.start_from = this.lastBlockReceived + 1;
+        }
+
+        // console.log('Starting stream:', this.request);
+
         return await new Promise((resolve, reject) => {
             if (socket) {
                 socket.emit('delta_stream_request', this.request, (response: any) => {
-                    console.log(response);
+                    // console.log(response);
                     if (response.status === 'OK') {
                         this.live = false;
                         this.started = true;
@@ -160,6 +168,12 @@ export class HyperionStream {
 
     emitMessage(msg: IncomingData<ActionContent | DeltaContent>): void {
 
+        // record the last block number
+        if (msg.content.block_num) {
+            this.lastBlockReceived = msg.content.block_num;
+            // console.log(`Last block received: ${this.lastBlockReceived}`);
+        }
+
         // Emit the event
         this.emit('message', msg);
 
@@ -192,7 +206,6 @@ export class HyperionStream {
             }
             case 'delta_history_end': {
                 console.log('History end');
-                console.log(msg);
                 break;
             }
             case 'action_trace': {

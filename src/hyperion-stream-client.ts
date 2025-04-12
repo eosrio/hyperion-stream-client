@@ -27,7 +27,9 @@ export class HyperionStreamClient {
 
     private socket?: Socket;
     private socketURL?: string;
+
     private lastReceivedBlock: number = 0;
+
     private dataQueue: QueueObject<IncomingData<ActionContent | DeltaContent>> | null = null;
     private options: HyperionClientOptions & Record<string, any> = {
         async: true,
@@ -51,13 +53,8 @@ export class HyperionStreamClient {
 
     eventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
     tempEventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
-
-    /**
-     * @typedef {object} BaseOptions
-     * @property {string} endpoint - Hyperion API Endpoint
-     * @property {boolean} async - Enable Asynchronous Mode
-     * @property {boolean} lib_stream - Enable onLibData handler
-     */
+    lastConnectedId?: string;
+    private disconnectedOnce = false;
 
     /**
      * Construct a new streaming client
@@ -276,10 +273,10 @@ export class HyperionStreamClient {
             });
         }
 
-        // if (msg.reqUUID) {
-        //     // trackedRequest = this.requestMap.get(msg.reqUUID);
-        //     trackedStream = this.streamMapByUUID.get(msg.reqUUID);
-        // }
+        if (msg.reqUUID) {
+            this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg);
+        }
+
         //
         // if (!trackedStream) {
         //     console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
@@ -354,28 +351,56 @@ export class HyperionStreamClient {
             if (!this.socketURL) {
                 reject();
             } else {
+
                 this.socket = io(this.socketURL, {
+                    reconnection: true,
+                    reconnectionDelay: 1000,
                     transports: ["websocket"],
-                    path: '/stream'
+                    path: '/stream',
+                    extraHeaders: {
+                        'x-hyperion-client-last-id': this.lastConnectedId || '',
+                    }
                 });
+
+                if (!this.disconnectedOnce) {
+                    setTimeout(() => {
+                        this.socket?.disconnect();
+                        this.disconnectedOnce = true;
+                        setTimeout(() => {
+                            this.setupSocket();
+                        }, 2000);
+                    }, 3000);
+                }
+
+                this.socket.on('reconnect', () => {
+                    console.log('Reconnected to server');
+                })
+
                 this.socket.on('connect', () => {
+                    this.lastConnectedId = this.socket?.id;
                     this.debugLog('connected');
                     this.online = true;
                     this.emit(StreamClientEvents.CONNECT);
                     this.processPendingStreams();
-                    this.resendRequests().catch(console.log);
                     resolve();
+                });
+
+                this.socket.on('handshake', (msg) => {
+                    this.debugLog('handshake', msg);
                 });
 
                 this.socket.on('error', (msg) => {
                     console.log(msg);
                 });
+
                 this.socket.on('lib_update', this.handleLibUpdate.bind(this));
+
                 this.socket.on('fork_event', (msg) => {
                     this.emit(StreamClientEvents.FORK, msg);
                 });
 
                 this.socket.on('message', (msg: any) => {
+                    // console.log('Main Socket:', msg);
                     this.handleSocketMessage(msg);
                 });
 
@@ -683,16 +708,24 @@ export class HyperionStreamClient {
     }
 
     private async processPendingStreams() {
-
         if (!this.socket) {
             return;
         }
-
         for (let stream of this.streams) {
             if (!stream.started) {
                 const resp = await stream.start(this.socket);
                 if (resp.status === 'OK') {
                     this.streamMapByUUID.set(resp.reqUUID, stream);
+                }
+            } else {
+                console.log('Stream already started:', stream.reqUUID);
+                if (stream.request.replayOnReconnect) {
+                    console.log('Replaying stream:', stream.reqUUID);
+                    this.streamMapByUUID.delete(stream.reqUUID);
+                    const resp = await stream.start(this.socket);
+                    if (resp.status === 'OK') {
+                        this.streamMapByUUID.set(resp.reqUUID, stream);
+                    }
                 }
             }
         }

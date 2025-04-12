@@ -57,6 +57,8 @@ export interface StreamDeltasRequest {
     read_until: number | string;
     filter_op?: 'and' | 'or';
     filters?: RequestFilter[];
+    // Request a history replay from the last received block
+    replayOnReconnect?: boolean;
 }
 
 export interface RequestFilter {
@@ -73,6 +75,8 @@ export interface StreamActionsRequest {
     read_until: number | string;
     filter_op?: 'and' | 'or';
     filters?: RequestFilter[];
+    // Request a history replay from the last received block
+    replayOnReconnect?: boolean;
 }
 
 export interface ActionContent {

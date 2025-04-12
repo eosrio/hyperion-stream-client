@@ -1,4 +1,4 @@
-import {HyperionStreamClient} from "@eosrio/hyperion-stream-client";
+import {HyperionStreamClient} from "../hyperion-stream-client.js";
 
 const client = new HyperionStreamClient({
     endpoint: 'wss://libre.rioblocks.io/stream',
@@ -12,6 +12,18 @@ try {
 } catch (error: any) {
     console.error('Connection failed:', error);
 }
+
+(await client.streamDeltas({
+    code: 'eosio',
+    scope: 'eosio',
+    table: 'global',
+    payer: '',
+    start_from: 0,
+    read_until: 0
+})).on('message', (data) => {
+    const content = data.content;
+    console.log(content);
+});
 
 // const globalStream = await client.streamDeltas({
 //     code: 'eosio',
