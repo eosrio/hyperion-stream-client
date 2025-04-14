@@ -1,5 +1,3 @@
-// Type definitions for HyperionStream event handlers
-// export type MessageHandler = (msg: IncomingData<ActionContent | DeltaContent>) => void;
 export type MessageHandler<T = any> = (data: T) => void;
 
 
@@ -46,6 +44,7 @@ export interface HyperionClientOptions {
     chainApi?: string;
     debug?: boolean;
     libStream?: boolean;
+    libMonitor?: boolean;
 }
 
 export interface StreamDeltasRequest {
@@ -54,7 +53,7 @@ export interface StreamDeltasRequest {
     scope: string;
     payer: string;
     start_from: number | string;
-    read_until: number | string;
+    read_until?: number | string;
     ignore_live?: boolean;
     filter_op?: 'and' | 'or';
     filters?: RequestFilter[];

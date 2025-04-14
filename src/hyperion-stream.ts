@@ -46,7 +46,7 @@ export class HyperionStream {
         this.request = request;
         this.type = type;
         this.liveQueue = queue((task: IncomingData<ActionContent | DeltaContent>, taskCallback) => {
-            // console.log('Processing task:', task.type, task.mode);
+            this.clientRef.debugLog('Processing task:', task.type, task.mode);
             this.emitMessage(task);
             taskCallback();
         });
@@ -71,7 +71,12 @@ export class HyperionStream {
                     this.liveQueue.pause();
                 }
 
-                console.log(`Requesting deltas from block: ${this.request.start_from} until: ${this.request.read_until}`);
+                if (this.request.start_from && parseInt(this.request.start_from.toString()) !== 0) {
+                    if (this.request.read_until && parseInt(this.request.read_until.toString()) !== 0) {
+                        console.log(`Requesting deltas from block: ${this.request.start_from} until: ${this.request.read_until}`);
+                    }
+                }
+
                 socket.emit('delta_stream_request', this.request, (response: any) => {
                     // console.log(response);
                     if (response.status === 'OK') {
@@ -184,7 +189,7 @@ export class HyperionStream {
     }
 
     handleIncomingMessage(msg: HyperionStreamEvent, ackCallback?: (ackResponse: any) => void) {
-        // console.log(`Incoming message: ${msg.type} - ${msg.mode}`);
+        this.clientRef.debugLog(`[STREAM] Incoming message: ${msg.type} - ${msg.mode}`);
         if (typeof ackCallback === 'function') {
             this.currentAckCallback = ackCallback;
         }
@@ -261,6 +266,8 @@ export class HyperionStream {
                 uuid: this.reqUUID
             } as IncomingData<DeltaContent>).catch(reason => {
                 console.error('Error processing delta trace:', reason);
+            }).then((value) => {
+                this.clientRef.debugLog(`Dequeued LIVE delta trace`, value);
             });
         }
     }

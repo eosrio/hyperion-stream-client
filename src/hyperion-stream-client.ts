@@ -238,7 +238,8 @@ export class HyperionStreamClient {
     }
 
     private handleLibUpdate(msg: any) {
-        if (msg.block_num) {
+
+        if (msg.block_num && this.options.libMonitor) {
             if (this.lastIrreversibleBlock > 0 && this.libTimestamp > 0) {
                 this.libOffsetArray.push(Date.now() - this.libTimestamp);
                 if (this.libOffsetArray.length > 10) {
@@ -307,15 +308,12 @@ export class HyperionStreamClient {
         }
 
         if (msg.reqUUID) {
-
-            console.log(`Received message for ${msg.reqUUID} (${msg.type})`);
-
+            this.debugLog(`[CLIENT] Received message for ${msg.reqUUID} (${msg.type})`);
             const trackedStream = this.streamMapByUUID.get(msg.reqUUID);
             if (!trackedStream) {
                 console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
                 return;
             }
-
             this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg, ackCallback);
         }
 
