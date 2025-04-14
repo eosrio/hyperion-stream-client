@@ -1,6 +1,8 @@
 import {
     ActionContent,
-    DeltaContent, EventMap, HyperionStreamEvent,
+    DeltaContent,
+    EventMap,
+    HyperionStreamEvent,
     IncomingData,
     MessageHandler,
     StreamActionsRequest,
@@ -9,7 +11,7 @@ import {
 import {Socket} from "socket.io-client";
 import {HyperionStreamClient} from "./hyperion-stream-client.js";
 import {replaceMetaFields} from "./functions.js";
-import {QueueObject, queue} from "async";
+import {queue, QueueObject} from "async";
 
 
 export class HyperionStream {
@@ -52,13 +54,35 @@ export class HyperionStream {
         });
     }
 
+    // get stream hash
+    async streamRequestHash(): Promise<string> {
+        let payload = `${this.type}:`
+        if (this.type === 'action') {
+            const req = this.request as StreamActionsRequest;
+            payload += `${req.contract}:${req.action}:${req.account}:`;
+        } else if (this.type === 'delta') {
+            const req = this.request as StreamDeltasRequest;
+            payload += `${req.code}:${req.table}:${req.scope}:${req.payer}:`;
+        }
+        payload += `${this.request.start_from}:${this.request.read_until}:${this.request.filter_op}`;
+        if (this.request.filters && this.request.filters.length > 0) {
+            payload += JSON.stringify(this.request.filters);
+        }
+        // get the hash of the payload
+        const msg = new TextEncoder().encode(payload);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msg);
+        const hashArray = Array.from(new Uint8Array(hashBuffer)); // convert buffer to byte array
+         // convert bytes to hex string
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
     async start(socket: Socket): Promise<any> {
 
         if (this.request.replayOnReconnect && this.started) {
             this.request.start_from = this.lastBlockReceived + 1;
         }
 
-        // console.log('Starting stream:', this.request);
+        console.log('Starting stream:', this.request);
 
         return await new Promise((resolve, reject) => {
             if (socket) {
@@ -77,8 +101,7 @@ export class HyperionStream {
                     }
                 }
 
-                socket.emit('delta_stream_request', this.request, (response: any) => {
-                    // console.log(response);
+                socket.emit(`${this.type}_stream_request`, this.request, (response: any) => {
                     if (response.status === 'OK') {
                         this.started = true;
                         this.reqUUID = response.reqUUID;
@@ -199,6 +222,10 @@ export class HyperionStream {
                 console.log(msg);
                 break;
             }
+            case 'action_trace': {
+                this.processActionTrace(msg);
+                break;
+            }
             case 'delta_trace': {
                 this.processDeltaTrace(msg);
                 break;
@@ -213,10 +240,6 @@ export class HyperionStream {
                         this.resolveNext(null);
                     }
                 }
-                break;
-            }
-            case 'action_trace': {
-                this.processActionTrace(msg);
                 break;
             }
         }

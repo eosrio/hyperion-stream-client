@@ -75,37 +75,81 @@ await sleep(200);
 //     }
 // })();
 
+// (async () => {
+//     try {
+//         const stream = await client.streamDeltas({
+//             code: 'eosio',
+//             scope: '',
+//             table: 'producers',
+//             payer: '',
+//             // get data from the last full round
+//             start_from: -12 * 21,
+//             filter_op: "or",
+//             filters: [
+//                 {field: "payer", value: "sweden"},
+//                 {field: "payer", value: "rioblocks"},
+//                 {field: "payer", value: "eosusa"}
+//             ]
+//         });
+//         let counter = 0;
+//         for await (const delta of stream) {
+//             if (delta === null) break;
+//             const content = delta.content;
+//             let line = '';
+//             if (delta.mode === 'history') {
+//                 line += '[HIST] ';
+//             } else if (delta.mode === 'live') {
+//                 line += '[LIVE] ';
+//             }
+//             line += `[${content['@timestamp']}] `;
+//             line += `Block: ${content.block_num} | `;
+//             line += `Producer: ${content.payer.padEnd(12, ' ')} | `;
+//             line += `Total Votes: ${content.data.total_votes.toString().padEnd(18, ' ')} | `;
+//             console.log(line, content.present);
+//             counter++;
+//         }
+//         console.log('Stream ended after', counter, 'messages');
+//         client.disconnect();
+//     } catch (e: any) {
+//         console.log('Error:', e.message);
+//     }
+// })();
+
 (async () => {
     try {
-        const stream = await client.streamDeltas({
-            code: 'eosio',
-            scope: '',
-            table: 'producers',
-            payer: '',
+        const stream = await client.streamActions({
+            contract: 'eosio',
+            action: 'onblock',
+            account: '',
+            start_from: 0,
+            // scope: '',
+            // table: 'producers',
+            // payer: '',
             // get data from the last full round
-            start_from: -12 * 21,
-            filter_op: "or",
-            filters: [
-                {field: "payer", value: "sweden"},
-                {field: "payer", value: "rioblocks"},
-                {field: "payer", value: "eosusa"}
-            ]
+            // start_from: -12 * 21,
+            // filter_op: "or",
+            // filters: [
+            //     {field: "payer", value: "sweden"},
+            //     {field: "payer", value: "rioblocks"},
+            //     {field: "payer", value: "eosusa"}
+            // ]
         });
         let counter = 0;
-        for await (const delta of stream) {
-            if (delta === null) break;
-            const content = delta.content;
+        for await (const action of stream) {
+            if (action === null) break;
+            const content = action.content;
+            // console.log(content);
             let line = '';
-            if (delta.mode === 'history') {
+            if (action.mode === 'history') {
                 line += '[HIST] ';
-            } else if (delta.mode === 'live') {
+            } else if (action.mode === 'live') {
                 line += '[LIVE] ';
             }
             line += `[${content['@timestamp']}] `;
             line += `Block: ${content.block_num} | `;
-            line += `Producer: ${content.payer.padEnd(12, ' ')} | `;
-            line += `Total Votes: ${content.data.total_votes.toString().padEnd(18, ' ')} | `;
-            console.log(line, content.present);
+            line += `Producer: ${content.producer.padEnd(12, ' ')} | `;
+            line += `Global Sequence: ${content.global_sequence.toString().padEnd(18, ' ')} | `;
+            console.log(line);
             counter++;
         }
         console.log('Stream ended after', counter, 'messages');

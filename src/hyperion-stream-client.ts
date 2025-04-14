@@ -18,8 +18,6 @@ import {
     TypedEventListener
 } from "./interfaces.js";
 
-import fetch from "cross-fetch";
-
 import {trimTrailingSlash} from "./functions.js";
 import {HyperionStream} from "hyperion-stream.js";
 
@@ -48,7 +46,9 @@ export class HyperionStreamClient {
     requestMap: Map<string, SavedRequest> = new Map();
 
     streams: HyperionStream[] = [];
+    // map by request content (prevent duplicated streams)
     streamMap: Map<string, HyperionStream> = new Map();
+    // map by request UUID
     streamMapByUUID: Map<string, HyperionStream> = new Map();
 
     eventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
@@ -606,63 +606,24 @@ export class HyperionStreamClient {
     }
 
     /**
-     * Send a request for a filtered action traces stream
-     * @param {StreamActionsRequest} request - Action Request Options
+     * Internal method to create a new stream request
+     * @param request
+     * @param type
+     * @private
      */
-    async streamActions(request: StreamActionsRequest): Promise<any> {
-        if (this.socket && this.socket.connected) {
-            try {
-                await this.checkLastBlock(request);
-            } catch (e: any) {
-                return {status: 'ERROR', error: e.message};
-            }
-            return new Promise((resolve, reject) => {
-                if (this.socket) {
-                    this.socket.emit('action_stream_request', request, (response: any) => {
-                        this.debugLog(response);
-                        if (response.status === 'OK') {
-                            const reqObj: SavedRequest = {
-                                type: 'action',
-                                live: false,
-                                started: false,
-                                req: request,
-                                deliveryCounter: 0,
-                                filtered: 0,
-                                pendingMessages: [],
-                            };
-                            this.savedRequests.push(reqObj);
-                            this.requestMap.set(response.reqUUID, reqObj);
-                            response['startingBlock'] = request.start_from;
-                        }
-                        resolve(response);
-                    });
-                } else {
-                    reject({status: false, error: 'socket was not created'});
-                }
-            });
-        } else {
-            throw new Error('Client is not connected! Please call connect before sending requests');
-        }
-    }
-
-    /**
-     * Send a request for a filtered delta traces stream
-     * @param {StreamDeltasRequest} request - Delta Request Options
-     */
-    async streamDeltas(request: StreamDeltasRequest): Promise<HyperionStream> {
-
-        // check for duplicate requests
-        const key = 'delta:' + request.code + ':' + request.table + ':' + request.scope + ':' + request.payer;
-        this.debugLog(`StreamDeltas: ${key}`);
+    private async createRequest(request: StreamActionsRequest | StreamDeltasRequest, type: "action" | "delta"): Promise<HyperionStream> {
+        // create stream instance
+        const stream = new HyperionStream(this, type, request);
+        // get the request hash to identify unique requests
+        const key = await stream.streamRequestHash();
         if (this.streamMap.has(key)) {
             throw new Error('Similar stream request already exists');
         }
-
-        // create stream instance
-        const stream = new HyperionStream(this, 'delta', request);
+        // save the stream
         this.streams.push(stream);
+        // index the stream by request hash
         this.streamMap.set(key, stream);
-
+        // check if the client socket is connected
         if (this.socket && this.socket.connected) {
             // the socket is already connected, attach the socket to start the stream
             const resp = await stream.start(this.socket);
@@ -675,38 +636,20 @@ export class HyperionStreamClient {
         }
     }
 
+    /**
+     * Send a request for a filtered action traces stream
+     * @param {StreamActionsRequest} request - Action Request Options
+     */
+    async streamActions(request: StreamActionsRequest): Promise<HyperionStream> {
+        return this.createRequest(request, 'action');
+    }
 
     /**
-     * Check if the start_from value should be updated or not
-     * @param request - Request object to verify
+     * Send a request for a filtered delta traces stream
+     * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    private async checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest) {
-        if (String(request.start_from).toUpperCase() === 'LIB') {
-            let url;
-            url = this.options.chainApi ? this.options.chainApi : this.socketURL;
-            url += '/v1/chain/get_info';
-            if (url) {
-                try {
-                    const getInfoResponse = await fetch(url);
-                    const json = await getInfoResponse.json() as any;
-                    if (json) {
-                        if (json['last_irreversible_block_num']) {
-                            request.start_from = json['last_irreversible_block_num'];
-                            this.debugLog(`Stream starting at lib (block ${request.start_from})`);
-                        }
-                    }
-                } catch (e: any) {
-                    throw new Error(`get_info failed on: ${url} | error: ${e.message}`);
-                }
-            }
-        } else if (request.start_from !== 0 && this.lastReceivedBlock) {
-            if (typeof request.start_from) {
-
-            }
-            if (Number(request.start_from) < this.lastReceivedBlock) {
-                request.start_from = this.lastReceivedBlock;
-            }
-        }
+    async streamDeltas(request: StreamDeltasRequest): Promise<HyperionStream> {
+        return this.createRequest(request, 'delta');
     }
 
     debugLog(...args: any[]): void {
@@ -715,20 +658,11 @@ export class HyperionStreamClient {
         }
     }
 
-    public setAsyncDataHandler(handler: AsyncHandlerFunction<ActionContent | DeltaContent>) {
-        this.onDataAsync = handler;
-    }
-
-    public setAsyncLibDataHandler(handler: AsyncHandlerFunction<ActionContent | DeltaContent>) {
-        this.onLibDataAsync = handler;
-    }
-
     private emit<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(event: K, data?: HyperionStreamEventMap<ActionContent | DeltaContent>[K]): void {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
             listeners.forEach((listener: EventListener<ActionContent | DeltaContent>) => listener(data));
         }
-
         const tempListeners = this.tempEventListeners.get(event);
         if (tempListeners && tempListeners.length > 0) {
             const listener = tempListeners.shift();
@@ -808,10 +742,15 @@ export class HyperionStreamClient {
         if (this.socket) {
             this.socket.emit('cancel_stream_request', {reqUUID}, (response: any) => {
                 console.log('Cancel response:', response);
+                const stream = this.streamMapByUUID.get(reqUUID);
+                if (stream) {
+
+                }
                 this.streamMapByUUID.delete(reqUUID);
                 this.streams.splice(this.streams.findIndex(s => s.reqUUID === reqUUID), 1);
                 console.log('Stream removed from map:', reqUUID);
                 console.log(this.streams.map(s => s.reqUUID));
+                // remove from streamMap
             });
         } else {
             console.error('Socket not connected');

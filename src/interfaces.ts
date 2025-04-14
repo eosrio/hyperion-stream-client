@@ -72,7 +72,7 @@ export interface StreamActionsRequest {
     account: string;
     action: string;
     start_from: number | string;
-    read_until: number | string;
+    read_until?: number | string;
     ignore_live?: boolean;
     filter_op?: 'and' | 'or';
     filters?: RequestFilter[];
