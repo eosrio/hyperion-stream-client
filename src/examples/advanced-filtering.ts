@@ -119,9 +119,10 @@ await sleep(200);
     try {
         const stream = await client.streamActions({
             contract: 'eosio',
-            action: 'onblock',
+            action: '*',
             account: '',
-            start_from: 0,
+            start_from: -10,
+            ignore_live: false
             // scope: '',
             // table: 'producers',
             // payer: '',
@@ -136,9 +137,9 @@ await sleep(200);
         });
         let counter = 0;
         for await (const action of stream) {
+            // Finish on the stream end
             if (action === null) break;
             const content = action.content;
-            // console.log(content);
             let line = '';
             if (action.mode === 'history') {
                 line += '[HIST] ';
@@ -149,6 +150,8 @@ await sleep(200);
             line += `Block: ${content.block_num} | `;
             line += `Producer: ${content.producer.padEnd(12, ' ')} | `;
             line += `Global Sequence: ${content.global_sequence.toString().padEnd(18, ' ')} | `;
+            line += `Contract: ${content.act.account.padEnd(12, ' ')} | `;
+            line += `Action: ${content.act.name.padEnd(12, ' ')} | `;
             console.log(line);
             counter++;
         }

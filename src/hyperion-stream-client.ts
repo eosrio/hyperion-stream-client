@@ -45,11 +45,11 @@ export class HyperionStreamClient {
     savedRequests: SavedRequest[] = [];
     requestMap: Map<string, SavedRequest> = new Map();
 
-    streams: HyperionStream[] = [];
+    streams: HyperionStream<ActionContent | DeltaContent>[] = [];
     // map by request content (prevent duplicated streams)
-    streamMap: Map<string, HyperionStream> = new Map();
+    streamMap: Map<string, HyperionStream<ActionContent | DeltaContent>> = new Map();
     // map by request UUID
-    streamMapByUUID: Map<string, HyperionStream> = new Map();
+    streamMapByUUID: Map<string, HyperionStream<ActionContent | DeltaContent>> = new Map();
 
     eventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
     tempEventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
@@ -611,9 +611,9 @@ export class HyperionStreamClient {
      * @param type
      * @private
      */
-    private async createRequest(request: StreamActionsRequest | StreamDeltasRequest, type: "action" | "delta"): Promise<HyperionStream> {
+    private async createRequest<T extends ActionContent | DeltaContent>(request: StreamActionsRequest | StreamDeltasRequest, type: "action" | "delta"): Promise<HyperionStream<T>> {
         // create stream instance
-        const stream = new HyperionStream(this, type, request);
+        const stream = new HyperionStream<T>(this, type, request);
         // get the request hash to identify unique requests
         const key = await stream.streamRequestHash();
         if (this.streamMap.has(key)) {
@@ -640,16 +640,16 @@ export class HyperionStreamClient {
      * Send a request for a filtered action traces stream
      * @param {StreamActionsRequest} request - Action Request Options
      */
-    async streamActions(request: StreamActionsRequest): Promise<HyperionStream> {
-        return this.createRequest(request, 'action');
+    async streamActions(request: StreamActionsRequest): Promise<HyperionStream<ActionContent>> {
+        return this.createRequest<ActionContent>(request, 'action');
     }
 
     /**
      * Send a request for a filtered delta traces stream
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    async streamDeltas(request: StreamDeltasRequest): Promise<HyperionStream> {
-        return this.createRequest(request, 'delta');
+    async streamDeltas(request: StreamDeltasRequest): Promise<HyperionStream<DeltaContent>> {
+        return this.createRequest<DeltaContent>(request, 'delta');
     }
 
     debugLog(...args: any[]): void {

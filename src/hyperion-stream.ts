@@ -14,11 +14,11 @@ import {replaceMetaFields} from "./functions.js";
 import {queue, QueueObject} from "async";
 
 
-export class HyperionStream {
+export class HyperionStream<T> {
 
     private eventHandlers: Map<string, Set<MessageHandler<any>>> = new Map();
     private messages: any[] = []; // Keep for backward compatibility
-    private resolveNext?: (value: ActionContent | DeltaContent | null) => void;
+    private resolveNext?: (value: IncomingData<ActionContent | DeltaContent> | null) => void;
     private isIteratorActive: boolean = false; // Track if iterator is being consumed
     private maxQueueSize: number = 1000; // Default max queue size when iterator isn't used
     request: StreamActionsRequest | StreamDeltasRequest;
@@ -72,7 +72,7 @@ export class HyperionStream {
         const msg = new TextEncoder().encode(payload);
         const hashBuffer = await crypto.subtle.digest('SHA-256', msg);
         const hashArray = Array.from(new Uint8Array(hashBuffer)); // convert buffer to byte array
-         // convert bytes to hex string
+        // convert bytes to hex string
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
@@ -245,7 +245,7 @@ export class HyperionStream {
         }
     }
 
-    async* [Symbol.asyncIterator](): AsyncIterator<ActionContent | DeltaContent | null> {
+    async* [Symbol.asyncIterator](): AsyncIterator<IncomingData<T> | null> {
         const isActive = true;
         while (isActive) {
             if (this.messages.length > 0) {
