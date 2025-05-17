@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyperion Stream Client - ESM Import Map Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .nav-link {
+            display: inline-block;
+            margin: 10px 0;
+            padding: 8px 15px;
+            background-color: #0066cc;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+
+        .nav-link:hover {
+            background-color: #0055aa;
+        }
+
+        .test-status {
+            display: inline-block;
+            margin-left: 15px;
+            padding: 5px 10px;
+            background-color: #f0ad4e;
+            color: white;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+    </style>
+
+    <!-- Console Logger Script -->
+    <script src="console-logger.js"></script>
+
+    <!-- Import Map Definition for ESM -->
+    <script type="importmap">
+        {
+            "imports": {
+                "@eosrio/hyperion-stream-client": "../lib/esm/index.js",
+                "socket.io-client": "https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/+esm",
+                "async": "https://cdn.jsdelivr.net/npm/async@3.2.6/+esm",
+            }
+        }
+    </script>
+
+    <!-- Test Script using Import Map with ESM -->
+    <script type="module">
+        // Initialize console logger when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.logger = initConsoleLogger();
+        });
+
+        // Import using the import map
+        import {HyperionStreamClient} from "@eosrio/hyperion-stream-client";
+
+        // Log to verify the import worked
+        console.log("HyperionStreamClient (ESM) loaded:", HyperionStreamClient);
+
+        // Try to create a client instance
+        try {
+            const client = new HyperionStreamClient({
+                endpoint: 'wss://libre.rioblocks.io',
+                debug: true
+            });
+
+            console.log("Client created successfully:", client);
+
+            // Set up event handlers
+            client.on("connect", () => {
+                console.log("Connected to Hyperion Stream API");
+                // Mark test as completed
+                markTestCompleted();
+
+                // Disconnect after a short delay
+                setTimeout(() => {
+                    console.log("Test completed, disconnecting client");
+                    client.disconnect();
+                }, 2000);
+            });
+
+            client.on("error", (error) => {
+                console.error("Connection error:", error);
+            });
+
+            // Connect to the endpoint when button is clicked
+            document.addEventListener('DOMContentLoaded', () => {
+                const connectButton = document.getElementById('connect-button');
+                if (connectButton) {
+                    connectButton.addEventListener('click', () => {
+                        console.log("Connecting to Hyperion Stream API...");
+                        client.connect();
+                    });
+                }
+            });
+        } catch (error) {
+            console.error("Error creating client:", error);
+        }
+    </script>
+</head>
+<body>
+<h1>Hyperion Stream Client - ESM Import Map Test</h1>
+<p>This test uses the ESM module directly with import maps, including CDN dependencies.</p>
+
+<div>
+    <a href="/" class="nav-link">Back to All Tests</a>
+    <span id="test-status" class="test-status">PENDING</span>
+</div>
+
+<div style="margin: 20px 0;">
+    <button id="connect-button">Connect to Hyperion Stream</button>
+</div>
+
+<p>The console output will appear below. This is especially useful for testing on mobile devices.</p>
+</body>
+</html>
