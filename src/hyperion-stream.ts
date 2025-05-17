@@ -1,13 +1,13 @@
 import {
-    ActionContent,
-    DeltaContent,
     EventMap,
     HyperionStreamEvent,
     IncomingData,
     MessageHandler,
     StreamActionsRequest,
     StreamClientEvents,
-    StreamDeltasRequest
+    StreamDeltasRequest,
+    StreamRequestTypes,
+    StreamResponseTypes, StreamTypes
 } from "./interfaces.js";
 import {Socket} from "socket.io-client";
 import {HyperionStreamClient} from "./hyperion-stream-client.js";
@@ -15,14 +15,14 @@ import {replaceMetaFields} from "./functions.js";
 import {queue, QueueObject} from "async";
 
 
-export class HyperionStream<T> {
+export class HyperionStream<T extends StreamResponseTypes> {
 
     private eventHandlers: Map<string, Set<MessageHandler<any>>> = new Map();
     private messages: any[] = []; // Keep for backward compatibility
-    private resolveNext?: (value: IncomingData<ActionContent | DeltaContent> | null) => void;
+    private resolveNext?: (value: IncomingData<StreamResponseTypes> | null) => void;
     private isIteratorActive: boolean = false; // Track if iterator is being consumed
     private maxQueueSize: number = 1000; // Default max queue size when iterator isn't used
-    request: StreamActionsRequest | StreamDeltasRequest;
+    request: StreamRequestTypes;
     type: 'action' | 'delta';
     live: boolean = false;
     firstReceivedBlock: number = 0;
@@ -30,25 +30,25 @@ export class HyperionStream<T> {
     filtered: number = 0;
     deliveryCounter: number = 0;
     liveQueueStartTimer?: number;
-    pendingMessages: IncomingData<ActionContent | DeltaContent>[] = [];
+    pendingMessages: IncomingData<T>[] = [];
     started: boolean = false;
     reqUUID = '';
     private clientRef: HyperionStreamClient;
-    lastBlockReceived: number = 0;
+    lastReceivedBlockNum: number = 0;
 
     // live data queue
-    private liveQueue: QueueObject<IncomingData<ActionContent | DeltaContent>>;
+    private liveQueue: QueueObject<IncomingData<T>>;
     private currentAckCallback?: (ackResponse: any) => void;
 
     constructor(
         client: HyperionStreamClient,
-        type: 'action' | 'delta',
-        request: StreamActionsRequest | StreamDeltasRequest
+        type: StreamTypes,
+        request: StreamRequestTypes
     ) {
         this.clientRef = client;
         this.request = request;
         this.type = type;
-        this.liveQueue = queue((task: IncomingData<ActionContent | DeltaContent>, taskCallback) => {
+        this.liveQueue = queue((task: IncomingData<T>, taskCallback) => {
             this.clientRef.debugLog('Processing task:', task.type, task.mode);
             this.emitMessage(task);
             taskCallback();
@@ -80,7 +80,7 @@ export class HyperionStream<T> {
     async start(socket: Socket): Promise<any> {
 
         if (this.request.replayOnReconnect && this.started) {
-            this.request.start_from = this.lastBlockReceived + 1;
+            this.request.start_from = this.lastReceivedBlockNum + 1;
         }
 
         console.log('Starting stream:', this.request);
@@ -131,7 +131,7 @@ export class HyperionStream<T> {
         }
     }
 
-    on<K extends keyof EventMap>(event: K, handler: MessageHandler<EventMap[K]>): this {
+    on<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>): this {
         if (!this.eventHandlers.has(event)) {
             this.eventHandlers.set(event, new Set());
         }
@@ -139,13 +139,13 @@ export class HyperionStream<T> {
         return this;
     }
 
-    off<K extends keyof EventMap>(event: K, handler: MessageHandler<EventMap[K]>):
+    off<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>):
         this {
         this.eventHandlers.get(event)?.delete(handler);
         return this;
     }
 
-    once<K extends keyof EventMap>(event: K, handler: MessageHandler<EventMap[K]>):
+    once<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>):
         this {
         const onceHandler = (data: any) => {
             handler(data);
@@ -166,7 +166,7 @@ export class HyperionStream<T> {
         return this;
     }
 
-    private emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
+    private emit<K extends keyof EventMap<T>>(event: K, data: EventMap<T>[K]): void {
         const handlers = this.eventHandlers.get(event);
         if (handlers) {
             handlers.forEach(handler => {
@@ -179,14 +179,18 @@ export class HyperionStream<T> {
         }
     }
 
-    emitMessage(msg: IncomingData<ActionContent | DeltaContent>): void {
+    emitMessage(msg: IncomingData<T>): void {
 
         // live messages received during history replay must be enqueued
         // console.log(`Incoming message: ${msg.type} - ${msg.mode} ~ Global Live: ${this.live}`);
 
         // record the last block number
         if (msg.content.block_num) {
-            this.lastBlockReceived = msg.content.block_num;
+            this.lastReceivedBlockNum = msg.content.block_num;
+            // update the client reference last received block
+            if (this.clientRef.lastReceivedBlockNum < this.lastReceivedBlockNum) {
+                this.clientRef.lastReceivedBlockNum = this.lastReceivedBlockNum;
+            }
         }
 
         // Emit the event to stream listeners
@@ -222,7 +226,7 @@ export class HyperionStream<T> {
         }
     }
 
-    handleIncomingMessage(msg: HyperionStreamEvent, ackCallback?: (ackResponse: any) => void) {
+    handleIncomingMessage(msg: HyperionStreamEvent<T>, ackCallback?: (ackResponse: any) => void) {
         this.clientRef.debugLog(`[STREAM] Incoming message: ${msg.type} - ${msg.mode}`);
         if (typeof ackCallback === 'function') {
             this.currentAckCallback = ackCallback;
@@ -275,8 +279,7 @@ export class HyperionStream<T> {
         }
     }
 
-    private processDeltaTrace(streamEvent: HyperionStreamEvent) {
-
+    private processDeltaTrace(streamEvent: HyperionStreamEvent<T>) {
         if (streamEvent.messages && streamEvent.messages.length > 0) {
             for (const delta of streamEvent.messages) {
                 replaceMetaFields(delta);
@@ -286,7 +289,7 @@ export class HyperionStream<T> {
                     type: 'delta',
                     content: delta,
                     uuid: this.reqUUID
-                } as IncomingData<DeltaContent>);
+                } as IncomingData<T>);
             }
         } else if (streamEvent.message) {
             const delta = JSON.parse(streamEvent.message);
@@ -298,7 +301,7 @@ export class HyperionStream<T> {
                 type: 'delta',
                 content: delta,
                 uuid: this.reqUUID
-            } as IncomingData<DeltaContent>).catch(reason => {
+            } as IncomingData<T>).catch(reason => {
                 console.error('Error processing delta trace:', reason);
             }).then((value) => {
                 this.clientRef.debugLog(`Dequeued LIVE delta trace`, value);
@@ -311,7 +314,7 @@ export class HyperionStream<T> {
      * @param streamEvent
      * @private
      */
-    private processActionTrace(streamEvent: HyperionStreamEvent) {
+    private processActionTrace(streamEvent: HyperionStreamEvent<T>) {
         if (streamEvent.messages && streamEvent.messages.length > 0) {
             for (const action of streamEvent.messages) {
                 replaceMetaFields(action);
@@ -321,7 +324,7 @@ export class HyperionStream<T> {
                     type: 'action',
                     content: action,
                     uuid: this.reqUUID
-                } as IncomingData<ActionContent>);
+                } as IncomingData<T>);
             }
         } else if (streamEvent.message) {
             const action = JSON.parse(streamEvent.message);
@@ -332,7 +335,7 @@ export class HyperionStream<T> {
                 type: 'action',
                 content: action,
                 uuid: this.reqUUID
-            } as IncomingData<ActionContent>);
+            } as IncomingData<T>);
         }
     }
 }

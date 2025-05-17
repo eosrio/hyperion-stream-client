@@ -150,15 +150,15 @@ describe('HyperionStreamClient Error Handling Tests', async () => {
 
         // Create multiple streams
         const stream1 = await client.streamActions({
-            contract: 'eosio',
+            contract: 'eosio.token',
             action: 'transfer',
-            start_from: 0,
+            start_from: -100,
         });
 
         const stream2 = await client.streamActions({
-            contract: 'eosio.token',
-            action: 'issue',
-            start_from: 0,
+            contract: 'eosio',
+            action: 'onblock',
+            start_from: -100,
         });
 
         // Verify that both streams are created

@@ -1,23 +1,23 @@
 export type MessageHandler<T = any> = (data: T) => void;
 
 
-export interface HyperionStreamEvent {
+export interface HyperionStreamEvent<T extends StreamResponseTypes> {
     type: string;
     reqUUID: string;
     mode: "live" | "history";
     message?: string;
-    messages?: (ActionContent | DeltaContent)[];
+    messages?: (T)[];
     error: Error;
 }
 
-export interface SavedRequest {
+export interface SavedRequest<K extends keyof StreamTypeMap> {
     started: boolean;
     live: boolean;
     liveQueueStartTimer?: number;
     reqUUID?: string;
-    type: string;
+    type: K;
     error?: string;
-    req: StreamActionsRequest | StreamDeltasRequest;
+    req: StreamTypeMap[K]['request'];
     firstReceivedBlock?: number;
     historyResults?: number;
     deliveryCounter: number;
@@ -171,9 +171,9 @@ export interface HyperionStreamEventMap<T> {
     'error': Error;
 }
 
-export interface EventMap {
+export interface EventMap<T> {
     'start': { status: string, reqUUID: string, startingBlock: number };
-    'message': IncomingData<ActionContent | DeltaContent>;
+    'message': IncomingData<T>;
     'error': any;
     // Add other events as needed
 }
@@ -182,3 +182,18 @@ export interface EventMap {
 export type TypedEventListener<T, K extends keyof HyperionStreamEventMap<T>> = (data: HyperionStreamEventMap<T>[K]) => void;
 export type EventData<T> = IncomingData<T> | LIBData | ForkData | Error | void | undefined;
 export type EventListener<T> = (data?: EventData<T>) => void;
+
+export type StreamTypeMap = {
+    action: {
+        request: StreamActionsRequest;
+        response: ActionContent;
+    };
+    delta: {
+        request: StreamDeltasRequest;
+        response: DeltaContent;
+    };
+};
+
+export type StreamTypes = keyof StreamTypeMap;
+export type StreamResponseTypes = StreamTypeMap[StreamTypes]['response'];
+export type StreamRequestTypes = StreamTypeMap[StreamTypes]['request'];

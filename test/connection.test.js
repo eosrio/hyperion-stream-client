@@ -1,6 +1,6 @@
-import {describe, it, before, after} from 'node:test';
+import {after, before, describe, it} from 'node:test';
 import {strict as assert} from 'node:assert';
-import {createTestClient, TEST_ENDPOINT, wait, TEST_TIMEOUT} from './setup.js';
+import {createTestClient, TEST_TIMEOUT, wait} from './setup.js';
 
 describe('HyperionStreamClient Connection Tests', async () => {
     let client;

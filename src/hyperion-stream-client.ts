@@ -12,7 +12,8 @@ import {
     StreamActionsRequest,
     StreamClientEvents,
     StreamDeltasRequest,
-    TypedEventListener
+    TypedEventListener,
+    StreamTypeMap, StreamResponseTypes, StreamTypes
 } from "./interfaces.js";
 
 import {trimTrailingSlash} from "./functions.js";
@@ -23,9 +24,9 @@ export class HyperionStreamClient {
     private socket?: Socket;
     private socketURL?: string;
 
-    private lastReceivedBlock: number = 0;
+    lastReceivedBlockNum: number = 0;
 
-    private dataQueue: QueueObject<IncomingData<ActionContent | DeltaContent>> | null = null;
+    private dataQueue: QueueObject<IncomingData<StreamResponseTypes>> | null = null;
     private options: HyperionClientOptions & Record<string, any> = {
         async: true,
         libStream: false,
@@ -33,18 +34,18 @@ export class HyperionStreamClient {
         connectionTimeout: 5000
     };
 
-    private libDataQueue: QueueObject<IncomingData<ActionContent | DeltaContent>> | null = null;
-    private reversibleBuffer: IncomingData<ActionContent | DeltaContent>[] = [];
+    private libDataQueue: QueueObject<IncomingData<StreamResponseTypes>> | null = null;
+    private reversibleBuffer: IncomingData<StreamResponseTypes>[] = [];
 
     online: boolean = false;
-    savedRequests: SavedRequest[] = [];
-    requestMap: Map<string, SavedRequest> = new Map();
+    savedRequests: SavedRequest<StreamTypes>[] = [];
+    requestMap: Map<string, SavedRequest<StreamTypes>> = new Map();
 
-    streams: HyperionStream<ActionContent | DeltaContent>[] = [];
+    streams: HyperionStream<StreamResponseTypes>[] = [];
     // map by request content (prevent duplicated streams)
-    streamMap: Map<string, HyperionStream<ActionContent | DeltaContent>> = new Map();
+    streamMap: Map<string, HyperionStream<StreamResponseTypes>> = new Map();
     // map by request UUID
-    streamMapByUUID: Map<string, HyperionStream<ActionContent | DeltaContent>> = new Map();
+    streamMapByUUID: Map<string, HyperionStream<StreamResponseTypes>> = new Map();
 
     eventListeners = new Map();
     tempEventListeners = new Map();
@@ -97,7 +98,7 @@ export class HyperionStreamClient {
      */
     public disconnect() {
         if (this.socket) {
-            this.lastReceivedBlock = 0;
+            this.lastReceivedBlockNum = 0;
             this.socket.disconnect();
             this.savedRequests = [];
         } else {
@@ -109,7 +110,7 @@ export class HyperionStreamClient {
      * Get the last block number received
      */
     get lastBlockNum(): number {
-        return this.lastReceivedBlock;
+        return this.lastReceivedBlockNum;
     }
 
     /**
@@ -117,7 +118,6 @@ export class HyperionStreamClient {
      * @param endpoint - Hyperion API Endpoint
      */
     public setEndpoint(endpoint: string) {
-        console.log(`Setting endpoint to ${endpoint}`);
         if (endpoint) {
             this.socketURL = trimTrailingSlash(endpoint);
             if (this.socketURL.endsWith('/stream')) {
@@ -128,7 +128,7 @@ export class HyperionStreamClient {
         }
     }
 
-    private pushToBuffer(task: IncomingData<ActionContent | DeltaContent>): void {
+    private pushToBuffer(task: IncomingData<StreamResponseTypes>): void {
         if (this.options.libStream) {
             this.reversibleBuffer.push(task);
         }
@@ -136,7 +136,7 @@ export class HyperionStreamClient {
 
     private setupIncomingQueue(): void {
         // setup incoming queue
-        this.dataQueue = queue((task: IncomingData<ActionContent | DeltaContent>, taskCallback) => {
+        this.dataQueue = queue((task: IncomingData<StreamResponseTypes>, taskCallback) => {
             const trackedRequest = this.requestMap.get(task.uuid);
             if (trackedRequest) {
 
@@ -212,7 +212,7 @@ export class HyperionStreamClient {
     private setupIrreversibleQueue(): void {
         // irreversible queue
         if (this.options.libStream) {
-            this.libDataQueue = queue((task: IncomingData<ActionContent | DeltaContent>, callback) => {
+            this.libDataQueue = queue((task: IncomingData<StreamResponseTypes>, callback) => {
                 task.irreversible = true;
                 this.emit(StreamClientEvents.LIBDATA, task);
                 callback();
@@ -291,111 +291,110 @@ export class HyperionStreamClient {
         }
     }
 
-    /**
-     * Internal method to set up the socket connection
-     * @private
-     */
+    private handleConnect(): void {
+        if (this.lastConnectedId) {
+            this.debugLog(`Reconnecting to ${this.socketURL} - sending previous socket id: ${this.lastConnectedId})`);
+            this.socket?.emit('reconnect', {last_id: this.lastConnectedId});
+        }
+        this.lastConnectedId = this.socket?.id;
+        this.debugLog(`Connected - socket id: ${this.socket?.id}`);
+        this.online = true;
+        // Fire the connect event
+        this.emit(StreamClientEvents.CONNECT);
+        // process any pending streams
+        this.processPendingStreams().catch(console.log);
+    }
+
+    private async handleResendRequests(args: any): Promise<void> {
+        try {
+            if (args.last_id) {
+                // call streams to resend requests
+                this.debugLog(`Resending requests...`);
+                for (const stream of this.streams) {
+                    if (this.socket) {
+                        this.streamMapByUUID.delete(stream.reqUUID);
+
+                        // continue from the last block received
+                        if (stream.lastReceivedBlockNum > 0) {
+                            stream.request.start_from = stream.lastReceivedBlockNum + 1;
+                        }
+
+                        const resp = await stream.start(this.socket);
+                        if (resp.status === 'OK') {
+                            this.streamMapByUUID.set(resp.reqUUID, stream);
+                        }
+                    }
+                }
+            }
+        } catch (e: any) {
+            console.log(`Error resending requests: ${e.message}`);
+        }
+    }
+
+    private handleHandshake(msg: any): void {
+        this.debugLog('handshake', msg);
+        if (msg.chain_id) {
+            this.chainId = msg.chain_id;
+        }
+    }
+
+    private handleForkEvent(msg: any): void {
+        this.emit(StreamClientEvents.FORK, msg);
+    }
+
+    private handleStatus(status: string): void {
+        switch (status) {
+            case 'relay_restored': {
+                if (!this.online) {
+                    this.online = true;
+                    this.resendRequests().catch(console.log);
+                }
+                break;
+            }
+            case 'relay_down': {
+                this.online = false;
+                break;
+            }
+            default: {
+                console.log(status);
+            }
+        }
+    }
+
+    private handleDisconnect(): void {
+        this.online = false;
+        console.log('disconnected!');
+    }
+
     private async setupSocket(): Promise<void> {
         return new Promise((resolve, reject) => {
+
             if (!this.socketURL) {
-                reject();
-            } else {
-
-                this.socket = io(this.socketURL, {
-                    reconnection: true,
-                    reconnectionDelay: 1000,
-                    transports: ["websocket"],
-                    path: '/stream',
-                    timeout: this.options.connectionTimeout,
-                    extraHeaders: {
-                        'x-hyperion-client-last-id': this.lastConnectedId || '',
-                    }
-                });
-
-                this.socket.on('connect_error', (err) => {
-                    reject(err);
-                });
-
-                this.socket.on('connect', () => {
-                    if (this.lastConnectedId) {
-                        this.debugLog(`Reconnecting to ${this.socketURL} - sending previous socket id: ${this.lastConnectedId})`);
-                        this.socket?.emit('reconnect', {last_id: this.lastConnectedId});
-                    }
-                    this.lastConnectedId = this.socket?.id;
-                    this.debugLog(`Connected - socket id: ${this.socket?.id}`);
-                    this.online = true;
-                    this.emit(StreamClientEvents.CONNECT);
-                    this.processPendingStreams();
-                    resolve();
-                });
-
-                this.socket.on('resend_requests', async (args) => {
-                    try {
-                        if (args.last_id) {
-                            // call streams to resend requests
-                            this.debugLog(`Resending requests...`);
-                            for (const stream of this.streams) {
-                                if (this.socket) {
-                                    this.streamMapByUUID.delete(stream.reqUUID);
-
-                                    // continue from the last block received
-                                    if (stream.lastBlockReceived > 0) {
-                                        stream.request.start_from = stream.lastBlockReceived + 1;
-                                    }
-
-                                    const resp = await stream.start(this.socket);
-                                    if (resp.status === 'OK') {
-                                        this.streamMapByUUID.set(resp.reqUUID, stream);
-                                    }
-                                }
-                            }
-                        }
-                    } catch (e: any) {
-                        console.log(`Error resending requests: ${e.message}`);
-                    }
-                });
-
-                this.socket.on('handshake', (msg) => {
-                    this.debugLog('handshake', msg);
-                    if (msg.chain_id) {
-                        this.chainId = msg.chain_id;
-                    }
-                });
-
-                this.socket.on('lib_update', this.handleLibUpdate.bind(this));
-
-                this.socket.on('fork_event', (msg) => {
-                    this.emit(StreamClientEvents.FORK, msg);
-                });
-
-                this.socket.on('message', (msg: any, ackCallback?: (data: any) => void) => {
-                    this.handleSocketMessage(msg, ackCallback);
-                });
-
-                this.socket.on('status', (status) => {
-                    switch (status) {
-                        case 'relay_restored': {
-                            if (!this.online) {
-                                this.online = true;
-                                this.resendRequests().catch(console.log);
-                            }
-                            break;
-                        }
-                        case 'relay_down': {
-                            this.online = false;
-                            break;
-                        }
-                        default: {
-                            console.log(status);
-                        }
-                    }
-                });
-
-                this.socket.on('disconnect', () => {
-                    this.online = false;
-                    console.log('disconnected!');
-                });
+                throw new Error('Socket URL not defined');
             }
+
+            this.socket = io(this.socketURL, {
+                reconnection: true,
+                reconnectionDelay: 1000,
+                transports: ["websocket"],
+                path: '/stream',
+                timeout: this.options.connectionTimeout,
+                extraHeaders: {
+                    'x-hyperion-client-last-id': this.lastConnectedId || '',
+                }
+            });
+            this.socket.on('resend_requests', this.handleResendRequests.bind(this));
+            this.socket.on('handshake', this.handleHandshake.bind(this));
+            this.socket.on('lib_update', this.handleLibUpdate.bind(this));
+            this.socket.on('fork_event', this.handleForkEvent.bind(this));
+            this.socket.on('message', this.handleSocketMessage.bind(this));
+            this.socket.on('status', this.handleStatus.bind(this));
+            this.socket.on('disconnect', this.handleDisconnect.bind(this));
+            this.socket.on('connect_error', reject);
+            this.socket.on('connect', () => {
+                this.handleConnect();
+                resolve();
+            });
         });
     }
 
@@ -460,9 +459,12 @@ export class HyperionStreamClient {
      * @param type
      * @private
      */
-    private async createRequest<T extends ActionContent | DeltaContent>(request: StreamActionsRequest | StreamDeltasRequest, type: "action" | "delta"): Promise<HyperionStream<T>> {
+    private async createRequest<K extends keyof StreamTypeMap>(
+        request: StreamTypeMap[K]['request'],
+        type: K
+    ): Promise<HyperionStream<StreamTypeMap[K]['response']>> {
         // create stream instance
-        const stream = new HyperionStream<T>(this, type, request);
+        const stream = new HyperionStream<StreamTypeMap[K]['response']>(this, type, request);
         // get the request hash to identify unique requests
         const key = await stream.streamRequestHash();
         if (this.streamMap.has(key)) {
@@ -489,16 +491,16 @@ export class HyperionStreamClient {
      * Send a request for a filtered action traces stream
      * @param {StreamActionsRequest} request - Action Request Options
      */
-    async streamActions(request: StreamActionsRequest): Promise<HyperionStream<ActionContent>> {
-        return this.createRequest<ActionContent>(request, 'action');
+    async streamActions(request: StreamActionsRequest) {
+        return this.createRequest(request, 'action');
     }
 
     /**
      * Send a request for a filtered delta traces stream
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    async streamDeltas(request: StreamDeltasRequest): Promise<HyperionStream<DeltaContent>> {
-        return this.createRequest<DeltaContent>(request, 'delta');
+    async streamDeltas(request: StreamDeltasRequest) {
+        return this.createRequest(request, 'delta');
     }
 
     debugLog(...args: any[]): void {
