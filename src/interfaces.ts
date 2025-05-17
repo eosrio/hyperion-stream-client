@@ -33,6 +33,7 @@ export enum StreamClientEvents {
     CONNECT = 'connect',
     DRAIN = 'drain',
     LIBDATA = 'libData',
+    ERROR = 'error',
 }
 
 /**
@@ -45,6 +46,8 @@ export interface HyperionClientOptions {
     debug?: boolean;
     libStream?: boolean;
     libMonitor?: boolean;
+    /** Connection timeout in milliseconds (default: 5000) */
+    connectionTimeout?: number;
 }
 
 export interface StreamDeltasRequest {
@@ -156,6 +159,7 @@ export interface HyperionStreamEventMap<T> {
     [StreamClientEvents.LIBDATA]: IncomingData<T>;
     [StreamClientEvents.LIBUPDATE]: LIBData;
     [StreamClientEvents.FORK]: ForkData;
+    [StreamClientEvents.ERROR]: Error;
     // String versions for convenience
     'connect': void;
     'drain': void;
@@ -164,6 +168,7 @@ export interface HyperionStreamEventMap<T> {
     'libData': IncomingData<T>;
     'libUpdate': LIBData;
     'fork': ForkData;
+    'error': Error;
 }
 
 export interface EventMap {
@@ -174,10 +179,6 @@ export interface EventMap {
 }
 
 // Generic typed event listener
-export type TypedEventListener<T, K extends keyof HyperionStreamEventMap<T>> =
-    (data: HyperionStreamEventMap<T>[K]) => void;
-
-
-export type AsyncHandlerFunction<T> = (data: IncomingData<T>) => Promise<void>;
-export type EventData<T> = IncomingData<T> | LIBData | ForkData | void | undefined;
+export type TypedEventListener<T, K extends keyof HyperionStreamEventMap<T>> = (data: HyperionStreamEventMap<T>[K]) => void;
+export type EventData<T> = IncomingData<T> | LIBData | ForkData | Error | void | undefined;
 export type EventListener<T> = (data?: EventData<T>) => void;

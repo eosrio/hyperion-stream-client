@@ -1,6 +1,6 @@
 {
   "name": "@eosrio/hyperion-stream-client",
-  "version": "3.6.0",
+  "version": "3.6.0-rc.1",
   "description": "Streaming Client for Hyperion History",
   "main": "./lib/esm/index.js",
   "exports": {
@@ -24,8 +24,14 @@
     "build:webpack:watch": "webpack --watch",
     "build:all": "npm run build:esm && npm run build:cjs && npm run fix-hybrid-packages && npm run build:webpack",
     "fix-hybrid-packages": "node scripts/create-dist-packages.mjs",
-    "test:esm:debug": "node examples/esm_import.mjs --inspect",
-    "example:advanced-filtering": "tsx src/examples/advanced-filtering.ts"
+    "example:advanced-filtering": "tsx src/examples/advanced-filtering.ts",
+    "test": "node --test test/index.js",
+    "test:watch": "node --test --watch test/index.js",
+    "test:connection": "node --test test/connection.test.js",
+    "test:streaming": "node --test test/streaming.test.js",
+    "test:error-handling": "node --test test/error-handling.test.js",
+    "test:api": "node --test test/api.test.js",
+    "serve:tests": "node test/browser/serve-tests.cjs"
   },
   "repository": "eosrio/hyperion-stream-client",
   "author": {
@@ -33,22 +39,21 @@
     "url": "https://eosrio.io"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "license": "MIT",
   "dependencies": {
     "async": "^3.2.6",
-    "socket.io-client": "^4.8.1",
-    "cross-fetch": "^4.1.0"
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "@types/async": "^3.2.24",
     "@types/node": "^22.15.18",
     "ts-loader": "^9.5.2",
+    "tsx": "^4.19.4",
     "typescript": "5.8.3",
     "webpack": "^5.99.8",
-    "webpack-cli": "^6.0.1",
-    "tsx": "^4.19.4"
+    "webpack-cli": "^6.0.1"
   },
   "bugs": {
     "url": "https://github.com/eosrio/hyperion-stream-client/issues"

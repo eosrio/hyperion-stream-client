@@ -9,7 +9,8 @@
     "lib": [
       "ES2019",
       "ES2020",
-      "esnext"
+      "esnext",
+      "DOM"
     ],
     "newLine": "lf",
     "stripInternal": true,

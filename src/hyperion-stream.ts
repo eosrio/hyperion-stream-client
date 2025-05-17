@@ -6,6 +6,7 @@ import {
     IncomingData,
     MessageHandler,
     StreamActionsRequest,
+    StreamClientEvents,
     StreamDeltasRequest
 } from "./interfaces.js";
 import {Socket} from "socket.io-client";
@@ -188,8 +189,18 @@ export class HyperionStream<T> {
             this.lastBlockReceived = msg.content.block_num;
         }
 
-        // Emit the event
+        // Emit the event to stream listeners
         this.emit('message', msg);
+
+        // Emit the event to the parent client to maintain compatibility with onDataAsync
+        // This allows users to listen to all requests on the same listener
+        if (msg.irreversible) {
+            // Emit to LIBDATA event for irreversible data
+            this.clientRef.emit(StreamClientEvents.LIBDATA, msg);
+        } else {
+            // Emit to DATA event for regular data
+            this.clientRef.emit(StreamClientEvents.DATA, msg);
+        }
 
         // Maintain backward compatibility with the iterator approach
         this.messages.push(msg);

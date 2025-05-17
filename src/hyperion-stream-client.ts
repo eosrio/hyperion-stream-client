@@ -1,11 +1,8 @@
-// noinspection JSUnusedGlobalSymbols
-
 import {queue, QueueObject} from "async";
 import {io, Socket} from "socket.io-client";
 
 import {
     ActionContent,
-    AsyncHandlerFunction,
     DeltaContent,
     EventListener,
     HyperionClientOptions,
@@ -19,7 +16,7 @@ import {
 } from "./interfaces.js";
 
 import {trimTrailingSlash} from "./functions.js";
-import {HyperionStream} from "hyperion-stream.js";
+import {HyperionStream} from "./hyperion-stream.js";
 
 export class HyperionStreamClient {
 
@@ -32,14 +29,12 @@ export class HyperionStreamClient {
     private options: HyperionClientOptions & Record<string, any> = {
         async: true,
         libStream: false,
-        endpoint: ''
+        endpoint: '',
+        connectionTimeout: 5000
     };
 
     private libDataQueue: QueueObject<IncomingData<ActionContent | DeltaContent>> | null = null;
     private reversibleBuffer: IncomingData<ActionContent | DeltaContent>[] = [];
-
-    private onDataAsync?: AsyncHandlerFunction<ActionContent | DeltaContent>;
-    private onLibDataAsync?: AsyncHandlerFunction<ActionContent | DeltaContent>;
 
     online: boolean = false;
     savedRequests: SavedRequest[] = [];
@@ -51,8 +46,9 @@ export class HyperionStreamClient {
     // map by request UUID
     streamMapByUUID: Map<string, HyperionStream<ActionContent | DeltaContent>> = new Map();
 
-    eventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
-    tempEventListeners: Map<string, EventListener<ActionContent | DeltaContent>[]> = new Map();
+    eventListeners = new Map();
+    tempEventListeners = new Map();
+
     lastConnectedId?: string;
     lastIrreversibleBlock = 0;
     libTimestamp: number = 0;
@@ -121,6 +117,7 @@ export class HyperionStreamClient {
      * @param endpoint - Hyperion API Endpoint
      */
     public setEndpoint(endpoint: string) {
+        console.log(`Setting endpoint to ${endpoint}`);
         if (endpoint) {
             this.socketURL = trimTrailingSlash(endpoint);
             if (this.socketURL.endsWith('/stream')) {
@@ -191,15 +188,7 @@ export class HyperionStreamClient {
                     task.irreversible = false;
                     this.emit(StreamClientEvents.DATA, task);
                     this.pushToBuffer(task);
-                    // run user-defined async callback
-                    if (this.onDataAsync && typeof this.onDataAsync === 'function') {
-                        this.onDataAsync(task).then(() => {
-                            taskCallback();
-                        });
-                    } else {
-                        taskCallback();
-                    }
-
+                    taskCallback();
                 }
             }
         }, 1);
@@ -226,13 +215,7 @@ export class HyperionStreamClient {
             this.libDataQueue = queue((task: IncomingData<ActionContent | DeltaContent>, callback) => {
                 task.irreversible = true;
                 this.emit(StreamClientEvents.LIBDATA, task);
-                if (this.onLibDataAsync) {
-                    this.onLibDataAsync(task).then(() => {
-                        callback();
-                    });
-                } else {
-                    callback();
-                }
+                callback();
             }, 1);
         }
     }
@@ -286,18 +269,9 @@ export class HyperionStreamClient {
         }
 
         this.emit(StreamClientEvents.LIBUPDATE, msg);
-
-        for (const request of this.savedRequests) {
-            if (request.req.read_until && request.req.read_until !== 0) {
-                if (request.req.read_until < msg.block_num) {
-                    this.disconnect();
-                }
-            }
-        }
     }
 
     private handleSocketMessage(msg: any, ackCallback?: (ackResponse: any) => void) {
-
         if (msg.targets) {
             msg.targets.forEach((target: string) => {
                 this.streamMapByUUID.get(target)?.handleIncomingMessage(msg);
@@ -306,7 +280,6 @@ export class HyperionStreamClient {
                 ackCallback({status: true});
             }
         }
-
         if (msg.reqUUID) {
             this.debugLog(`[CLIENT] Received message for ${msg.reqUUID} (${msg.type})`);
             const trackedStream = this.streamMapByUUID.get(msg.reqUUID);
@@ -316,70 +289,6 @@ export class HyperionStreamClient {
             }
             this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg, ackCallback);
         }
-
-        //
-        // if (!trackedStream) {
-        //     console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
-        //     // this.requestServerCancel(msg.reqUUID);
-        //     return;
-        // }
-        //
-        // trackedStream.handleIncomingMessage(msg);
-
-        // console.log("Stream ->>", trackedStream.started);
-        // console.log("Request ->>", trackedRequest);
-
-        // if (msg.type === 'trace_init') {
-        //     if (trackedRequest) {
-        //         if (!trackedRequest.firstReceivedBlock) {
-        //             this.debugLog(`[${msg.reqUUID}] First Block received: ${msg.first_block} for ${msg.reqUUID} (${msg.results} docs)`);
-        //             trackedRequest.firstReceivedBlock = msg.first_block;
-        //             trackedRequest.historyResults = msg.results;
-        //         } else {
-        //             this.debugLog(`[${msg.reqUUID}] Fill request received, from block ${msg.first_block} for (${msg.results} docs)`);
-        //             // increment total blocks in the case of a fill request
-        //             trackedRequest.historyResults = trackedRequest.historyResults + msg.results;
-        //         }
-        //     } else {
-        //         console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
-        //     }
-        // }
-        //
-        // if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg.messages)) {
-        //     if (msg['error']) {
-        //         console.log(msg['error']);
-        //         this.socket?.close();
-        //         return;
-        //     }
-        //
-        //     if (msg.messages && trackedRequest) {
-        //         trackedRequest.filtered += msg.filtered;
-        //         console.log(msg.type, msg.mode, msg.reqUUID, msg.filtered, msg.messages.length);
-        //     }
-        //
-        //     switch (msg.type) {
-        //         case 'delta_trace': {
-        //             if (msg.messages) {
-        //                 msg.messages.forEach((message: DeltaContent) => {
-        //                     this.processDeltaTrace(message, msg.mode, msg.reqUUID);
-        //                 });
-        //             } else if (msg.message) {
-        //                 this.processDeltaTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-        //             }
-        //             break;
-        //         }
-        //         case 'action_trace': {
-        //             if (msg.messages) {
-        //                 msg.messages.forEach((message: ActionContent) => {
-        //                     this.processActionTrace(message, msg.mode, msg.reqUUID);
-        //                 });
-        //             } else if (msg.message) {
-        //                 this.processActionTrace(JSON.parse(msg.message), msg.mode, msg.reqUUID);
-        //             }
-        //             break;
-        //         }
-        //     }
-        // }
     }
 
     /**
@@ -397,20 +306,15 @@ export class HyperionStreamClient {
                     reconnectionDelay: 1000,
                     transports: ["websocket"],
                     path: '/stream',
+                    timeout: this.options.connectionTimeout,
                     extraHeaders: {
                         'x-hyperion-client-last-id': this.lastConnectedId || '',
                     }
                 });
 
-                // if (!this.disconnectedOnce) {
-                //     setTimeout(() => {
-                //         this.socket?.disconnect();
-                //         this.disconnectedOnce = true;
-                //         setTimeout(() => {
-                //             this.setupSocket();
-                //         }, 2000);
-                //     }, 3000);
-                // }
+                this.socket.on('connect_error', (err) => {
+                    reject(err);
+                });
 
                 this.socket.on('connect', () => {
                     if (this.lastConnectedId) {
@@ -456,10 +360,6 @@ export class HyperionStreamClient {
                     if (msg.chain_id) {
                         this.chainId = msg.chain_id;
                     }
-                });
-
-                this.socket.on('error', (msg) => {
-                    console.log(msg);
                 });
 
                 this.socket.on('lib_update', this.handleLibUpdate.bind(this));
@@ -510,76 +410,25 @@ export class HyperionStreamClient {
         if (!this.socketURL) {
             throw new Error('endpoint was not defined!');
         }
+
         this.setupIncomingQueue();
         this.setupIrreversibleQueue();
+
         this.debugLog(`Connecting to ${this.socketURL}...`);
-        await this.setupSocket();
+
+        try {
+            // Connect using socket.io-client's built-in timeout option
+            await this.setupSocket();
+        } catch (error: any) {
+            // If we get here with an error, make sure to clean up any partial connection
+            if (this.socket && !this.online) {
+                this.socket.disconnect();
+            }
+            // Emit an error event
+            this.emit(StreamClientEvents.ERROR, error);
+            throw error;
+        }
     }
-
-    // /**
-    //  * Internal method to parse an action streaming trace
-    //  * @param action
-    //  * @param mode
-    //  * @param uuid
-    //  * @private
-    //  */
-    // private processActionTrace(action: ActionContent, mode: "live" | "history", uuid: string) {
-    //     const metaKey = '@' + action['act'].name;
-    //     if (action[metaKey]) {
-    //         const parsedData = action[metaKey];
-    //         Object.keys(parsedData).forEach((key) => {
-    //             if (!action['act']['data']) {
-    //                 action['act']['data'] = {};
-    //             }
-    //             action['act']['data'][key] = parsedData[key];
-    //         });
-    //         delete action[metaKey];
-    //     }
-    //     if (this.dataQueue) {
-    //         this.dataQueue.push({
-    //             uuid: uuid,
-    //             type: 'action',
-    //             mode: mode,
-    //             content: action,
-    //             irreversible: false
-    //         }).catch(console.log);
-    //         this.lastReceivedBlock = action['block_num'];
-    //     }
-    // }
-
-    // /**
-    //  * Internal method to parse a delta streaming trace
-    //  * @param delta
-    //  * @param mode
-    //  * @param uuid
-    //  * @private
-    //  */
-    // private processDeltaTrace(delta: DeltaContent, mode: "live" | "history", uuid: string) {
-    //     let metaKey = '@' + delta['table'];
-    //     if (delta[metaKey + '.data']) {
-    //         metaKey = metaKey + '.data'
-    //     }
-    //     if (delta[metaKey]) {
-    //         const parsedData = delta[metaKey];
-    //         Object.keys(parsedData).forEach((key) => {
-    //             if (!delta['data']) {
-    //                 delta['data'] = {};
-    //             }
-    //             delta['data'][key] = parsedData[key];
-    //         });
-    //         delete delta[metaKey];
-    //     }
-    //     if (this.dataQueue) {
-    //         this.dataQueue.push({
-    //             uuid: uuid,
-    //             type: 'delta',
-    //             mode: mode,
-    //             content: delta,
-    //             irreversible: false
-    //         }).catch(console.log);
-    //         this.lastReceivedBlock = delta['block_num'];
-    //     }
-    // }
 
     /**
      * Replay cached requests
@@ -658,7 +507,7 @@ export class HyperionStreamClient {
         }
     }
 
-    private emit<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(event: K, data?: HyperionStreamEventMap<ActionContent | DeltaContent>[K]): void {
+    emit<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(event: K, data?: HyperionStreamEventMap<ActionContent | DeltaContent>[K]): void {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
             listeners.forEach((listener: EventListener<ActionContent | DeltaContent>) => listener(data));
@@ -672,18 +521,24 @@ export class HyperionStreamClient {
         }
     }
 
-    public once<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(event: K, listener: TypedEventListener<ActionContent | DeltaContent, K>): void {
+    public once<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(
+        event: K,
+        listener: TypedEventListener<ActionContent | DeltaContent, K>
+    ): void {
         if (typeof listener !== 'function') {
             throw new Error('Event listener must be a function');
         }
         if (!this.tempEventListeners.has(event)) {
-            this.tempEventListeners.set(event, [listener as EventListener<ActionContent | DeltaContent>]);
+            this.tempEventListeners.set(event, [listener]);
         } else {
-            this.tempEventListeners.get(event)?.push(listener as EventListener<ActionContent | DeltaContent>);
+            this.tempEventListeners.get(event)?.push(listener);
         }
     }
 
-    public on(event: StreamClientEvents | string, listener: EventListener<ActionContent | DeltaContent>): void {
+    public on<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(
+        event: K,
+        listener: TypedEventListener<ActionContent | DeltaContent, K>
+    ): void {
         if (typeof listener !== 'function') {
             throw new Error('Event listener must be a function');
         }
@@ -694,17 +549,20 @@ export class HyperionStreamClient {
         }
     }
 
-    public off(event: StreamClientEvents | string, listener: EventListener<ActionContent | DeltaContent>): void {
-        // remove from fixed list
+    public off<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(
+        event: K,
+        listener: TypedEventListener<ActionContent | DeltaContent, K>
+    ): void {
+
         const listeners = this.eventListeners.get(event);
         if (listeners && listeners.length > 0) {
-            const idx = listeners.findIndex(l => l === listener);
+            const idx = listeners.findIndex((l: TypedEventListener<ActionContent | DeltaContent, K>) => l === listener);
             listeners.splice(idx, 1);
         }
-        // remove from temporary list
+
         const tempListeners = this.tempEventListeners.get(event);
         if (tempListeners && tempListeners.length > 0) {
-            const idx = tempListeners.findIndex(l => l === listener);
+            const idx = tempListeners.findIndex((l: TypedEventListener<ActionContent | DeltaContent, K>) => l === listener);
             tempListeners.splice(idx, 1);
         }
     }

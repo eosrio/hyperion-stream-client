@@ -1,228 +1,349 @@
 # Hyperion Stream Client
 
-Streaming Client for Hyperion History API (v3+)
+A TypeScript/JavaScript client for streaming data from Hyperion History API (v3.6+).
 
-### Usage
+> **Compatibility Note**: Hyperion Stream Client v3.6 is only compatible with Hyperion servers from v3.6 onwards.
 
-#### Supported Environments
-
-- Node.js v16 and up
-  - ES Module
-  - CommonJS
-- Browsers
-  - ES Module - Angular, React and other frameworks
-  - UMD
-
-## Quick Start
-
-### Installing via npm package
+## Installation
 
 ```bash
 npm install @eosrio/hyperion-stream-client --save
 ```
 
+## Supported Environments
 
-#### Importing the client
+- **Node.js** (v18+)
+  - ES Modules: `import { HyperionStreamClient } from "@eosrio/hyperion-stream-client"`
+  - CommonJS: `const { HyperionStreamClient } = require("@eosrio/hyperion-stream-client")`
+- **Browsers**
+  - ES Modules (Angular, React, Vue, etc.)
+  - UMD bundle: 
+    ```html
+    <!-- From CDN (replace with your preferred CDN) -->
+    <script src="https://unpkg.com/@eosrio/hyperion-stream-client/dist/hyperion-stream-client.js"></script>
 
-ESM (Node and Browser):
-```typescript
-import {HyperionStreamClient} from "@eosrio/hyperion-stream-client";
-```
+    <!-- Or from local file -->
+    <script src="path/to/hyperion-stream-client.js"></script>
 
-CommonJs (Node):
-```javascript
-const {HyperionStreamClient} = require('@eosrio/hyperion-stream-client');
-```
+    <!-- Usage after script is loaded -->
+    <script>
+      const client = new HyperionStreamClient({
+        endpoint: "https://eos.hyperion.eosrio.io"
+      });
+    </script>
+    ```
+  - Import Maps (Modern browsers):
+    ```html
+    <!-- Import Map Definition - UMD Bundle Approach -->
+    <script type="importmap">
+    {
+      "imports": {
+        "@eosrio/hyperion-stream-client": "https://unpkg.com/@eosrio/hyperion-stream-client/dist/hyperion-stream-client.js"
+      }
+    }
+    </script>
 
-<br>
+    <!-- Usage with import map -->
+    <script type="module">
+      import { HyperionStreamClient } from "@eosrio/hyperion-stream-client";
 
-### Browser library (served from public Hyperion APIs)
+      const client = new HyperionStreamClient({
+        endpoint: "https://eos.hyperion.eosrio.io"
+      });
+    </script>
+    ```
 
-Without installing via npm, you can also load the webpack bundle directly:
+    Alternatively, you can use the ESM module directly with import maps, but you'll need to map all dependencies:
 
-```html
-<script src="https://<ENDPOINT>/stream-client.js"></script>
-```
+    ```html
+    <!-- Import Map Definition - ESM Module Approach -->
+    <script type="importmap">
+    {
+      "imports": {
+        "@eosrio/hyperion-stream-client": "https://unpkg.com/@eosrio/hyperion-stream-client/lib/esm/index.js",
+        "socket.io-client": "https://cdn.jsdelivr.net/npm/socket.io-client@4.8.1/+esm",
+        "async": "https://cdn.jsdelivr.net/npm/async@3.2.6/+esm",
+        "cross-fetch": "https://cdn.jsdelivr.net/npm/cross-fetch@4.1.0/+esm"
+      }
+    }
+    </script>
+    ```
 
-Where `<ENDPOINT>` is the Hyperion API (e.g. `https://eos.hyperion.eosrio.io`)
+    > **Note on Browser Compatibility**: Import maps are supported in Chrome 89+, Edge 89+, Safari 16.4+, and Firefox 108+. For older browsers, you should use the UMD bundle with a regular script tag or consider using a polyfill like [es-module-shims](https://github.com/guybedford/es-module-shims).
 
-For other usages, the bundle is also available at `dist/hyperion-stream-client.js`
-
-<br>
-
-
-### 1. Connection
-
-Set up the endpoint that you want to fetch data from:
-
-```javascript
-const client = new HyperionStreamClient({
-    endpoint: 'https://example.com',
-    debug: true,
-    libStream: false
-});
-```
-
-`https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
-
-- set `libStream` to `true` if you want to enable a stream of only **irreversible data**.
-Don't forget to attach the handler using the method: `setAsyncLibDataHandler(handler: AsyncHandlerFunction)`
-- set `debug`  to `true` to print debugging messages
-
-### 2. Making requests
-
-to ensure the client is connected, requests should be made only after calling the `client.connect()` method, refer to examples
-below;
-
-#### 2.1 Action Stream - client.streamActions
-
-`client.streamActions(request: StreamActionsRequest): void`
-
-
-- `contract` - contract account
-- `action` - action name
-- `account` - notified account name
-- `start_from` - start reading on block or on a specific date. 0=disabled means it will read starting from HEAD block.
-- `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
-- `filters` - actions filter (more details below)
-
-**Notes**
-
-- Block number can be either positive or negative - E.g.: **700** (start from block 700)
-- In case of negative block number, it will be subtracted from the HEAD - E.g.: **-150** (since 150 blocks ago)
-- Date format (ISO 8601) - e.g. 2020-01-01T00:00:00.000Z
+## Basic Usage
 
 ```typescript
-import {HyperionStreamClient, StreamClientEvents} from "@eosrio/hyperion-stream-client";
+import { HyperionStreamClient } from "@eosrio/hyperion-stream-client";
 
+// 1. Create client
 const client = new HyperionStreamClient({
-    endpoint: "http://localhost:1234",
-    debug: true,
-    libStream: false
+  endpoint: "https://eos.hyperion.eosrio.io",
+  debug: false
 });
 
-client.on(StreamClientEvents.LIBUPDATE, (data: EventData) => {
-    console.log(data);
+// 2. Set up event handlers
+client.on("connect", () => {
+  console.log("Connected to Hyperion Stream API");
 });
 
-client.on('connect', () => {
-  console.log('connected!');
+client.on("error", (error) => {
+  console.error("Connection error:", error);
 });
 
-client.setAsyncDataHandler(async (data) => {
-    console.log(data);
-    // process incoming data, replace with your code
-    // await processSomethingHere();
-})
-
+// 3. Connect to the endpoint
 await client.connect();
 
-client.streamActions({
-  contract: 'eosio',
-  action: 'voteproducer',
-  account: '',
-  start_from: '2020-03-15T00:00:00.000Z',
+// 4. Stream actions
+const stream = await client.streamActions({
+  contract: "eosio.token",
+  action: "transfer",
+  account: "",
+  start_from: 0,
+  filters: [
+    { field: "@transfer.to", value: "eosio.ramfee" }
+  ]
+});
+
+// 5. Handle stream data
+stream.on("message", (data) => {
+  console.log("Received transfer to eosio.ramfee:", data.content.act.data);
+});
+```
+
+## Client Configuration
+
+```typescript
+const client = new HyperionStreamClient({
+  // Required: Hyperion API endpoint
+  endpoint: "https://eos.hyperion.eosrio.io",
+
+  // Optional: Enable debug logging (default: false)
+  debug: false,
+
+  // Optional: Stream irreversible blocks only (default: false)
+  libStream: false,
+
+  // Optional: Monitor last irreversible block (default: false)
+  libMonitor: false,
+
+  // Optional: Connection timeout in ms (default: 5000)
+  connectionTimeout: 5000
+});
+```
+
+## Streaming Actions
+
+```typescript
+const stream = await client.streamActions({
+  // Required: Contract account
+  contract: "eosio.token",
+
+  // Required: Action name (use "*" for all actions)
+  action: "transfer",
+
+  // Optional: Notified account (use "" for any)
+  account: "",
+
+  // Optional: Start block/time (0 = from HEAD, negative = blocks from HEAD)
+  start_from: 0, // or "-100" or "2023-01-01T00:00:00.000Z"
+
+  // Optional: End block/time (0 = no end)
   read_until: 0,
-  filters: [],
-});
 
+  // Optional: Data filters
+  filters: [
+    { field: "@transfer.to", value: "someaccount" }
+  ]
+});
 ```
 
-#### 2.1.1 Act Data Filters
+## Streaming Table Deltas
 
-You can set up filters to refine your stream. Filters should use fields following the Hyperion Action Data Structure,
-such as:
+```typescript
+const deltaStream = await client.streamDeltas({
+  // Required: Contract account
+  code: "eosio.token",
 
-- `act.data.producers` (on eosio::voteproducer)
-- `@transfer.to` (here the @ prefix is required since transfers have special mappings)
+  // Required: Table name (use "*" for all tables)
+  table: "accounts",
 
-Please refer to
-the [mapping definitions](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts) to
-know which data fields are available
+  // Optional: Table scope (use "" for any)
+  scope: "",
 
-For example, to filter the stream for
-every transfer made to the `eosio.ramfee` account:
+  // Optional: RAM payer (use "" for any)
+  payer: "",
 
-```javascript
-client.streamActions({
-    contract: 'eosio.token',
-    action: 'transfer',
-    account: 'eosio',
-    start_from: 0,
-    read_until: 0,
-    filters: [
-        {field: '@transfer.to', value: 'eosio.ramfee'}
-    ],
+  // Optional: Start block/time
+  start_from: 0,
+
+  // Optional: End block/time (0 = no end)
+  read_until: 0,
+
+  // Optional: Filter operation type ('and' or 'or')
+  filter_op: "or",
+
+  // Optional: Data filters
+  filters: [
+    { field: "payer", value: "someaccount" },
+    { field: "data.balance", value: "100.0000 EOS" }
+  ]
 });
-``` 
-
-To refine even more your stream, you could add more filters. Remember that adding more filters
-will result in **AND** operations. For **OR** operations setup another request. 
-
-#### 2.2 Delta Stream (contract rows) - client.streamDeltas
-
-`client.streamDeltas(request: StreamDeltasRequest): void`
-
-- `code` - contract account
-- `table` - table name
-- `scope` - table scope
-- `payer` - ram payer
-- `start_from` - start reading on block or on a specific date. 0=disabled means it will read starting from HEAD block.
-- `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
-
-
-
-Example:
-
-Referring to the same pattern as the action stream example above, one could also include a delta stream request
-
-```javascript
-client.streamDeltas({
-    code: 'eosio.token',
-    table: '*',
-    scope: '',
-    payer: '',
-    start_from: 0,
-    read_until: 0,
-});
-``` 
-
-_Note: Delta filters are planned to be implemented soon._
-
-<br>
-
-#### 3. Handling Data
-
-Incoming data handler is defined via the `client.setAsyncDataHandler(async (data)=> void)` method
-
-if you set `libStream` to `true` another stream of only **irreversible data** will be available.
-Don't forget to attach the handler using the method: `setAsyncLibDataHandler(handler: AsyncHandlerFunction)`
-
-data object is structured as follows:
-
-- `type` - _action_ | _delta_
-- `mode` - _live_ | _history_
-- `content` - Hyperion Data Structure (
-  see [action index](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts#L53)
-  and [delta index](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts#L212)
-  templates)
-
-```javascript
-client.setAsyncDataHandler(async (data) => {
-    console.log(data);
-    // process incoming data, replace with your code
-    // await processSomethingHere();
-})
-
-// irreversible data stream only for when libStream: true on client connection setup
-client.setAsyncLibDataHandler(async (data) => {
-  console.log(data);
-  // process incoming data, replace with your code
-  // await processSomethingHere();
-})
 ```
 
+## Event Handling
+
+The client uses an event-based API:
+
+```typescript
+// Client events
+client.on("connect", () => { /* ... */ });
+client.on("error", (error) => { /* ... */ });
+client.on("libUpdate", (data) => { /* ... */ });
+
+// Stream events
+stream.on("message", (data) => { /* ... */ });
+stream.on("error", (error) => { /* ... */ });
+```
+
+## AsyncIterator Pattern
+
+In addition to the event-based API, streams also support the AsyncIterator pattern, which allows for more readable, sequential processing of stream data:
+
+```typescript
+// Create a stream
+const stream = await client.streamActions({
+  contract: "eosio.token",
+  action: "transfer"
+});
+
+// Process stream data using for-await-of loop
+try {
+  for await (const action of stream) {
+    // Check for stream end
+    if (action === null) break;
+
+    // Process the action
+    console.log(`Block ${action.content.block_num}: ${action.content.act.name}`);
+  }
+  console.log("Stream ended");
+} catch (error) {
+  console.error("Stream error:", error);
+}
+```
+
+This pattern is especially useful for sequential processing and works with both action and delta streams.
+
+## Block Range Parameters
+
+### Understanding `start_from` and `read_until`
+
+Both parameters accept three types of values:
+
+- **Positive number**: Absolute block number
+- **Negative number**: Relative number of blocks from the current head block
+- **ISO timestamp string**: Specific point in time (e.g., "2023-01-01T00:00:00.000Z")
+
+#### Examples:
+
+```typescript
+// Start from the current head block
+start_from: 0
+
+// Start from exactly block 150000000
+start_from: 150000000
+
+// Start from 100 blocks before the current head block
+start_from: -100
+
+// Start from January 1, 2023
+start_from: "2023-01-01T00:00:00.000Z"
+
+// Read until 200 blocks before the current head block
+read_until: -200
+```
+
+For more advanced usage and complete examples, see the [examples directory](https://github.com/eosrio/hyperion-stream-client/tree/master/src/examples) in the repository.
 
 
-Useful information about load-balancing multiple Socket.IO servers:
-https://socket.io/docs/v4/using-multiple-nodes/#NginX-configuration
+## Additional Resources
+
+- [Examples Directory](https://github.com/eosrio/hyperion-stream-client/tree/master/src/examples) - Complete example scripts
+- [Socket.IO Load Balancing](https://socket.io/docs/v4/using-multiple-nodes/#NginX-configuration) - Information for production deployments
+- [Hyperion API Documentation](https://hyperion.docs.eosrio.io/) - Full Hyperion API documentation
+
+## Development
+
+### Building from Source
+
+```bash
+# Install dependencies
+npm install
+
+# Build ESM version
+npm run build:esm
+
+# Build CommonJS version
+npm run build:cjs
+
+# Build browser bundle
+npm run build:webpack
+
+# Build all formats
+npm run build:all
+```
+
+### Browser Tests
+
+The repository includes test files to verify browser functionality:
+
+1. Clone the repository and build all formats:
+   ```bash
+   git clone https://github.com/eosrio/hyperion-stream-client.git
+   cd hyperion-stream-client
+   npm install
+   npm run build:all
+   ```
+
+2. Run the test server:
+   ```bash
+   npm run serve:tests
+   ```
+   or
+   ```bash
+   node test/browser/serve-tests.cjs
+   ```
+
+3. Open your browser and navigate to:
+   - http://localhost:3001/ - Index page with links to all tests
+   - http://localhost:3001/test/browser/umd-global-test.html - UMD bundle with global access
+   - http://localhost:3001/test/browser/import-map-esm-test.html - ESM module with import map
+
+4. Check the browser console to see if the imports and client creation were successful
+
+The browser tests verify two main import methods:
+
+- **UMD Global Test**: Tests loading the UMD bundle directly via a script tag and accessing the HyperionStreamClient globally
+- **ESM Import Map Test**: Tests using the ESM module directly with import maps, including mapping all dependencies
+
+### Running Tests
+
+The library uses Node.js Native Test Runner (v18+):
+
+```bash
+# Run all tests
+npm test
+
+# Run specific test categories
+npm run test:connection
+npm run test:streaming
+npm run test:error-handling
+npm run test:api
+
+# Run tests in watch mode
+npm run test:watch
+```
+
+## License
+
+MIT License - See [LICENSE](https://github.com/eosrio/hyperion-stream-client/blob/master/LICENSE) for details.

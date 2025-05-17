@@ -2,19 +2,28 @@ import {HyperionStreamClient} from "../hyperion-stream-client.js";
 
 const client = new HyperionStreamClient({
     endpoint: 'wss://libre.rioblocks.io',
-    // debug: true,
     libStream: false,
-    libMonitor: false,
+    libMonitor: true
 });
+
 await client.connect();
 console.log('Connected to Hyperion Stream - chain_id:', client.chainId);
+
+client.on("libUpdate", data => {
+    console.log('LIB Update:', data);
+});
+
+client.on('data', data => {
+    console.log('Data:', data.content);
+});
+
+client.onDataAsync = async (data) => {
+    console.log('Async Data:', data.content);
+}
+
 client.on('error', (error) => {
     console.error('Error:', error);
 });
-const sleep = async (ms: number) => {
-    return new Promise(resolve => setTimeout(resolve, ms));
-};
-await sleep(200);
 
 // Async Iterator Example
 // (async () => {
@@ -119,7 +128,7 @@ await sleep(200);
     try {
         const stream = await client.streamActions({
             contract: 'eosio',
-            action: '*',
+            action: 'onblock',
             account: '',
             start_from: -10,
             ignore_live: false
@@ -283,5 +292,3 @@ await sleep(200);
 //     console.log(data);
 //     // console.log('Received data from event:', data.type, data.reqUUID);
 // });
-
-

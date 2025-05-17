@@ -22,7 +22,7 @@ await sleep(200);
         scope: '',
         table: '',
         payer: 'rioblocks',
-        start_from: 0,
+        start_from: -10,
         read_until: 0,
         replayOnReconnect: false
     });
