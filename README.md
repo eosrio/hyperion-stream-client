@@ -50,9 +50,9 @@ The Hyperion Stream Client simplifies connecting to and consuming data streams f
 
 - [Installation](#installation)
 - [Supported Environments](#supported-environments)
-    - [Node.js](#nodejs)
+    - [Node.js](#nodejs-v18)
     - [Browsers](#browsers)
-- [Quick Start: Basic Usage](#quick-start-basic-usage)
+- [Quick Start: Basic Usage](#getting-started-basic-usage)
 - [Client Configuration](#client-configuration)
 - [Streaming Actions](#streaming-actions)
 - [Streaming Table Deltas](#streaming-table-deltas)
