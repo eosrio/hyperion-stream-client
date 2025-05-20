@@ -169,6 +169,12 @@ export class HyperionStream<T extends StreamResponseTypes> {
     private emit<K extends keyof EventMap<T>>(event: K, data: EventMap<T>[K]): void {
         const handlers = this.eventHandlers.get(event);
         if (handlers) {
+
+            if (this.currentAckCallback) {
+                this.currentAckCallback({status: true});
+                this.currentAckCallback = undefined;
+            }
+
             handlers.forEach(handler => {
                 try {
                     handler(data);
