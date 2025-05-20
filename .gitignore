@@ -10,3 +10,6 @@ node_modules/
 .env.test
 .idea
 lib
+source.md
+src.zip
+FULL_DOCUMENTATION.md

@@ -25,6 +25,7 @@
     "build:all": "npm run build:esm && npm run build:cjs && npm run fix-hybrid-packages && npm run build:webpack",
     "fix-hybrid-packages": "node scripts/create-dist-packages.mjs",
     "example:advanced-filtering": "tsx src/examples/advanced-filtering.ts",
+    "generate-docs": "node scripts/generate-documentation.mjs",
     "test": "node --test test/index.js",
     "test:watch": "node --test --watch test/index.js",
     "test:connection": "node --test test/connection.test.js",
