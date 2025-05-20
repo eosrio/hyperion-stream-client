@@ -192,6 +192,14 @@ export class HyperionStream<T extends StreamResponseTypes> {
 
         // record the last block number
         if (msg.content.block_num) {
+
+            // check if the next block is greater than the last received block
+            if (this.lastReceivedBlockNum > 0 && msg.content.block_num <= this.lastReceivedBlockNum) {
+                // if the block number is less than the last received block, ignore it
+                console.error(`Ignoring message with block number: ${msg.content.block_num}`);
+                return;
+            }
+
             this.lastReceivedBlockNum = msg.content.block_num;
             // update the client reference last received block
             if (this.clientRef.lastReceivedBlockNum < this.lastReceivedBlockNum) {
@@ -240,7 +248,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
 
         switch (msg.type) {
             case 'trace_init': {
-                console.log(msg);
+                // console.log(msg);
                 break;
             }
             case 'action_trace': {
@@ -251,16 +259,8 @@ export class HyperionStream<T extends StreamResponseTypes> {
                 this.processDeltaTrace(msg);
                 break;
             }
-            case 'delta_history_end': {
-                this.clientRef.debugLog('History end');
-                if (!this.request.ignore_live) {
-                    this.liveQueue.resume();
-                } else {
-                    this.isIteratorActive = false;
-                    if (this.resolveNext) {
-                        this.resolveNext(null);
-                    }
-                }
+            case 'history_end': {
+                this.historyEnd();
                 break;
             }
         }
@@ -342,6 +342,18 @@ export class HyperionStream<T extends StreamResponseTypes> {
                 content: action,
                 uuid: this.reqUUID
             } as IncomingData<T>);
+        }
+    }
+
+    private historyEnd() {
+        this.clientRef.debugLog('History end');
+        if (!this.request.ignore_live) {
+            this.liveQueue.resume();
+        } else {
+            this.isIteratorActive = false;
+            if (this.resolveNext) {
+                this.resolveNext(null);
+            }
         }
     }
 }
