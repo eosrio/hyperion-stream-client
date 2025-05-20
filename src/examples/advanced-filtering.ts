@@ -9,13 +9,13 @@ const client = new HyperionStreamClient({
 await client.connect();
 console.log('Connected to Hyperion Stream - chain_id:', client.chainId);
 
-client.on("libUpdate", data => {
-    console.log('LIB Update:', data);
-});
+// client.on("libUpdate", data => {
+//     console.log('LIB Update:', data);
+// });
 
-client.on('data', data => {
-    console.log('Data:', data.content);
-});
+// client.on('data', data => {
+//     console.log('Data:', data.content);
+// });
 
 client.on('error', (error) => {
     console.error('Error:', error);
@@ -94,17 +94,29 @@ client.on('error', (error) => {
                 {field: "payer", value: "sweden"},
                 {field: "payer", value: "rioblocks"},
                 {field: "payer", value: "eosusa"}
-            ]
+            ],
+            replayOnReconnect: true
         });
         let counter = 0;
+        let lastBlock = 0;
         for await (const delta of stream) {
             if (delta === null) break;
             const content = delta.content;
+
+            if (lastBlock === 0) {
+                lastBlock = content.block_num;
+            } else {
+                if (content.block_num != lastBlock + 1) {
+                    console.error(`Expected block number: ${lastBlock + 1}, Received: ${content.block_num}`);
+                }
+                lastBlock = content.block_num;
+            }
+
             let line = '';
             if (delta.mode === 'history') {
-                line += '[HIST] ';
+                line += '[HIST DELTA] ';
             } else if (delta.mode === 'live') {
-                line += '[LIVE] ';
+                line += '[LIVE DELTA] ';
             }
             line += `[${content['@timestamp']}] `;
             line += `Block: ${content.block_num} | `;
@@ -127,7 +139,7 @@ client.on('error', (error) => {
             action: 'onblock',
             account: '',
             start_from: -10,
-            ignore_live: false
+            replayOnReconnect: true
             // scope: '',
             // table: 'producers',
             // payer: '',
@@ -141,15 +153,26 @@ client.on('error', (error) => {
             // ]
         });
         let counter = 0;
+        let lastBlock = 0;
         for await (const action of stream) {
             // Finish on the stream end
             if (action === null) break;
             const content = action.content;
+
+            if (lastBlock === 0) {
+                lastBlock = content.block_num;
+            } else {
+                if (content.block_num != lastBlock + 1) {
+                    console.error(`Expected block number: ${lastBlock + 1}, Received: ${content.block_num}`);
+                }
+                lastBlock = content.block_num;
+            }
+
             let line = '';
             if (action.mode === 'history') {
-                line += '[HIST] ';
+                line += '[HIST ACTION] ';
             } else if (action.mode === 'live') {
-                line += '[LIVE] ';
+                line += '[LIVE ACTION] ';
             }
             line += `[${content['@timestamp']}] `;
             line += `Block: ${content.block_num} | `;
