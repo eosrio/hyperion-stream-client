@@ -139,14 +139,12 @@ export class HyperionStream<T extends StreamResponseTypes> {
         return this;
     }
 
-    off<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>):
-        this {
+    off<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>): this {
         this.eventHandlers.get(event)?.delete(handler);
         return this;
     }
 
-    once<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>):
-        this {
+    once<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>): this {
         const onceHandler = (data: any) => {
             handler(data);
             this.off(event, onceHandler);
@@ -245,18 +243,17 @@ export class HyperionStream<T extends StreamResponseTypes> {
         if (typeof ackCallback === 'function') {
             this.currentAckCallback = ackCallback;
         }
-
         switch (msg.type) {
             case 'trace_init': {
                 // console.log(msg);
                 break;
             }
             case 'action_trace': {
-                this.processActionTrace(msg);
+                this.processTrace("action", msg);
                 break;
             }
             case 'delta_trace': {
-                this.processDeltaTrace(msg);
+                this.processTrace("delta", msg);
                 break;
             }
             case 'history_end': {
@@ -285,63 +282,33 @@ export class HyperionStream<T extends StreamResponseTypes> {
         }
     }
 
-    private processDeltaTrace(streamEvent: HyperionStreamEvent<T>) {
+    private processTrace(type: StreamTypes, streamEvent: HyperionStreamEvent<T>) {
         if (streamEvent.messages && streamEvent.messages.length > 0) {
-            for (const delta of streamEvent.messages) {
-                replaceMetaFields(delta);
+            for (const message of streamEvent.messages) {
+                replaceMetaFields(message);
                 this.emitMessage({
                     irreversible: false,
                     mode: streamEvent.mode,
-                    type: 'delta',
-                    content: delta,
+                    type,
+                    content: message,
                     uuid: this.reqUUID
-                } as IncomingData<T>);
+                });
             }
         } else if (streamEvent.message) {
-            const delta = JSON.parse(streamEvent.message);
-            replaceMetaFields(delta);
-            this.clientRef.debugLog(`Enqueuing LIVE delta trace: ${delta.block_num}`);
+            const message = JSON.parse(streamEvent.message);
+            replaceMetaFields(message);
+            this.clientRef.debugLog(`Enqueuing LIVE ${type} trace: ${message.block_num}`);
             this.liveQueue.push({
                 irreversible: false,
                 mode: streamEvent.mode,
-                type: 'delta',
-                content: delta,
+                type,
+                content: message,
                 uuid: this.reqUUID
-            } as IncomingData<T>).catch(reason => {
-                console.error('Error processing delta trace:', reason);
+            }).catch(reason => {
+                console.error(`Error processing ${type} trace:`, reason);
             }).then((value) => {
-                this.clientRef.debugLog(`Dequeued LIVE delta trace`, value);
+                this.clientRef.debugLog(`Dequeued LIVE ${type} trace`, value);
             });
-        }
-    }
-
-    /**
-     * Internal method to parse an action streaming trace
-     * @param streamEvent
-     * @private
-     */
-    private processActionTrace(streamEvent: HyperionStreamEvent<T>) {
-        if (streamEvent.messages && streamEvent.messages.length > 0) {
-            for (const action of streamEvent.messages) {
-                replaceMetaFields(action);
-                this.emitMessage({
-                    irreversible: false,
-                    mode: streamEvent.mode,
-                    type: 'action',
-                    content: action,
-                    uuid: this.reqUUID
-                } as IncomingData<T>);
-            }
-        } else if (streamEvent.message) {
-            const action = JSON.parse(streamEvent.message);
-            replaceMetaFields(action);
-            this.emitMessage({
-                irreversible: false,
-                mode: streamEvent.mode,
-                type: 'action',
-                content: action,
-                uuid: this.reqUUID
-            } as IncomingData<T>);
         }
     }
 

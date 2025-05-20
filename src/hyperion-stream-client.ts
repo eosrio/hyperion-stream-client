@@ -26,7 +26,6 @@ export class HyperionStreamClient {
 
     lastReceivedBlockNum: number = 0;
 
-    private dataQueue: QueueObject<IncomingData<StreamResponseTypes>> | null = null;
     private options: HyperionClientOptions & Record<string, any> = {
         async: true,
         libStream: false,
@@ -128,87 +127,6 @@ export class HyperionStreamClient {
         }
     }
 
-    private pushToBuffer(task: IncomingData<StreamResponseTypes>): void {
-        if (this.options.libStream) {
-            this.reversibleBuffer.push(task);
-        }
-    }
-
-    private setupIncomingQueue(): void {
-        // setup incoming queue
-        this.dataQueue = queue((task: IncomingData<StreamResponseTypes>, taskCallback) => {
-            const trackedRequest = this.requestMap.get(task.uuid);
-            if (trackedRequest) {
-
-                // Check if the first data payload was received, mark the request as started
-                if (!trackedRequest.started) {
-                    trackedRequest.started = true;
-
-                    if (task.mode === 'live') {
-                        trackedRequest.live = true;
-                    }
-                }
-
-                console.log(`Task mode ${task.mode} | Tracked Live: ${trackedRequest.live} | Start on: ${trackedRequest.req.start_from}`);
-
-                if (task.mode === 'history') {
-                    trackedRequest.deliveryCounter++;
-                    if (trackedRequest.deliveryCounter + trackedRequest.filtered === trackedRequest.historyResults) {
-                        // allow 2 blocks before adding the live queue back in
-                        trackedRequest.liveQueueStartTimer = setTimeout(() => {
-                            this.debugLog('All history data was received, allow live data flow...');
-                            trackedRequest.live = true;
-                            this.dataQueue?.push(trackedRequest.pendingMessages);
-                            trackedRequest.pendingMessages = [];
-                        }, 2500) as unknown as number;
-                    } else {
-                        // if the live queue is about to start and another history message arrives, cancel the start
-                        if (trackedRequest.liveQueueStartTimer) {
-                            clearTimeout(trackedRequest.liveQueueStartTimer);
-                        }
-                    }
-                }
-
-                if (task.mode === "live" && !trackedRequest.live) {
-                    // add any live message to pending
-                    if (trackedRequest) {
-                        trackedRequest.pendingMessages.push(task);
-                        this.debugLog(`Received live message, adding to pending messages (${trackedRequest.pendingMessages.length})`);
-                    }
-                    taskCallback();
-                } else {
-
-                    if (task.mode === 'history') {
-                        this.debugLog(task.mode, task.content.block_num, trackedRequest.deliveryCounter, trackedRequest.historyResults);
-                    } else {
-                        this.debugLog(task.mode, task.content.block_num);
-                    }
-
-                    // normal processing
-                    task.irreversible = false;
-                    this.emit(StreamClientEvents.DATA, task);
-                    this.pushToBuffer(task);
-                    taskCallback();
-                }
-            }
-        }, 1);
-
-        // assign an error callback
-        this.dataQueue.error((err) => {
-            if (err) {
-                console.error('task experienced an error');
-            }
-        });
-
-        this.dataQueue.drain(() => {
-            this.emit(StreamClientEvents.DRAIN);
-        });
-
-        this.dataQueue.empty(() => {
-            this.emit(StreamClientEvents.EMPTY);
-        });
-    }
-
     private setupIrreversibleQueue(): void {
         // irreversible queue
         if (this.options.libStream) {
@@ -272,6 +190,9 @@ export class HyperionStreamClient {
     }
 
     private handleSocketMessage(msg: any, ackCallback?: (ackResponse: any) => void) {
+
+        // console.log(Date.now(), msg.type, msg.mode, msg.reqUUID, msg.targets, msg.messages?.length);
+
         if (msg.targets) {
             msg.targets.forEach((target: string) => {
                 this.streamMapByUUID.get(target)?.handleIncomingMessage(msg);
@@ -279,15 +200,19 @@ export class HyperionStreamClient {
             if (ackCallback) {
                 ackCallback({status: true});
             }
-        }
-        if (msg.reqUUID) {
-            this.debugLog(`[CLIENT] Received message for ${msg.reqUUID} (${msg.type})`);
-            const trackedStream = this.streamMapByUUID.get(msg.reqUUID);
-            if (!trackedStream) {
-                console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
-                return;
+        } else {
+            if (msg.reqUUID) {
+                this.debugLog(`[CLIENT] Received message for ${msg.reqUUID} (${msg.type})`);
+                const trackedStream = this.streamMapByUUID.get(msg.reqUUID);
+                if (!trackedStream) {
+                    console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
+                    return;
+                }
+                this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg, ackCallback);
+            } else {
+                console.log('Received message without reqUUID');
+                console.log(msg);
             }
-            this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg, ackCallback);
         }
     }
 
@@ -410,7 +335,6 @@ export class HyperionStreamClient {
             throw new Error('endpoint was not defined!');
         }
 
-        this.setupIncomingQueue();
         this.setupIrreversibleQueue();
 
         this.debugLog(`Connecting to ${this.socketURL}...`);
