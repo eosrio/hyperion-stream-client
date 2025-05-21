@@ -83,8 +83,6 @@ export class HyperionStream<T extends StreamResponseTypes> {
             this.request.start_from = this.lastReceivedBlockNum + 1;
         }
 
-        console.log('Starting stream:', this.request);
-
         return await new Promise((resolve, reject) => {
             if (socket) {
 
@@ -194,8 +192,8 @@ export class HyperionStream<T extends StreamResponseTypes> {
             // check if the next block is greater than the last received block
             if (this.lastReceivedBlockNum > 0 && msg.content.block_num <= this.lastReceivedBlockNum) {
                 // if the block number is less than the last received block, ignore it
-                console.error(`Ignoring message with block number: ${msg.content.block_num}`);
-                return;
+                // console.error(`Ignoring message with block number: ${msg.content.block_num}`);
+                // return;
             }
 
             this.lastReceivedBlockNum = msg.content.block_num;

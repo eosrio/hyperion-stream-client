@@ -68,6 +68,7 @@ export interface RequestFilter {
     field: string;
     value: string | number | boolean;
     operator?: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'starts_with' | 'ends_with';
+    asset?: string;
 }
 
 export interface StreamActionsRequest {
@@ -85,6 +86,7 @@ export interface StreamActionsRequest {
 
 export interface ActionContent {
     "@timestamp": string;
+    timestamp: string;
     global_sequence: number;
     account_ram_deltas: {
         delta: number;
@@ -109,18 +111,22 @@ export interface ActionContent {
     trx_id: string;
     producer: string;
     notified: string;
+    receipts: {
+        receiver: string;
+    }[]
 
     // @ prefixed keys
     [key: string]: any;
 }
 
 export interface DeltaContent {
+    "@timestamp": string;
+    timestamp: string;
     code: string;
     scope: string;
     table: string;
     primary_key: string;
     payer: string;
-    "@timestamp": string;
     present: number;
     block_num: number;
     block_id: string;

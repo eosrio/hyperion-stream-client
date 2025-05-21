@@ -1,7 +1,8 @@
 import {HyperionStreamClient} from "../hyperion-stream-client.js";
+import {StreamClientEvents} from "../interfaces.js";
 
 const client = new HyperionStreamClient({
-    endpoint: 'wss://libre.rioblocks.io',
+    endpoint: 'wss://ultra.eosrio.io',
     libStream: false,
     libMonitor: true
 });
@@ -17,8 +18,8 @@ console.log('Connected to Hyperion Stream - chain_id:', client.chainId);
 //     console.log('Data:', data.content);
 // });
 
-client.on('error', (error) => {
-    console.error('Error:', error);
+client.on(StreamClientEvents.ERROR, (error) => {
+    console.error('[Client] Error:', error);
 });
 
 // Async Iterator Example
@@ -80,127 +81,212 @@ client.on('error', (error) => {
 //     }
 // })();
 
-(async () => {
-    try {
-        const stream = await client.streamDeltas({
-            code: 'eosio',
-            scope: '',
-            table: 'producers',
-            payer: '',
-            // get data from the last full round
-            start_from: -12 * 21,
-            filter_op: "or",
-            filters: [
-                {field: "payer", value: "sweden"},
-                {field: "payer", value: "rioblocks"},
-                {field: "payer", value: "eosusa"}
-            ],
-            replayOnReconnect: true
-        });
-        let counter = 0;
-        let lastBlock = 0;
-        for await (const delta of stream) {
-            if (delta === null) break;
-            const content = delta.content;
+// (async () => {
+//     try {
+//         const stream = await client.streamDeltas({
+//             code: 'eosio',
+//             scope: 'eosio',
+//             table: 'global',
+//             payer: '',
+//             // get data from the last full round
+//             start_from: -10,
+//             // filter_op: "or",
+//             filters: [
+//                 // {field: "payer", value: "sweden"},
+//                 // {field: "payer", value: "rioblocks"},
+//                 // {field: "payer", value: "eosusa"}
+//             ],
+//             replayOnReconnect: false
+//         });
+//         let counter = 0;
+//         let lastBlock = 0;
+//         for await (const delta of stream) {
+//             if (delta === null) break;
+//             const content = delta.content;
+//
+//             if (lastBlock === 0) {
+//                 lastBlock = content.block_num;
+//             } else {
+//                 if (content.block_num != lastBlock + 1) {
+//                     console.error(`Expected block number: ${lastBlock + 1}, Received: ${content.block_num}`);
+//                 }
+//                 lastBlock = content.block_num;
+//             }
+//
+//             let line = '';
+//             if (delta.mode === 'history') {
+//                 line += '[HIST DELTA] ';
+//             } else if (delta.mode === 'live') {
+//                 line += '[LIVE DELTA] ';
+//             }
+//             line += `[${content['@timestamp']}] `;
+//             line += `Block: ${content.block_num} | `;
+//             line += `Scope: ${content.scope.padEnd(12, ' ')} | `;
+//             // line += `Total Votes: ${content.data.total_votes.toString().padEnd(18, ' ')} | `;
+//             console.log(line, content.present);
+//             counter++;
+//         }
+//         console.log('Stream ended after', counter, 'messages');
+//         client.disconnect();
+//     } catch (e: any) {
+//         console.log('Error:', e.message);
+//     }
+// })();
 
-            if (lastBlock === 0) {
-                lastBlock = content.block_num;
-            } else {
-                if (content.block_num != lastBlock + 1) {
-                    console.error(`Expected block number: ${lastBlock + 1}, Received: ${content.block_num}`);
-                }
-                lastBlock = content.block_num;
-            }
+// (async () => {
+//     try {
+//         const stream = await client.streamActions({
+//             contract: 'eosio.oracle',
+//             action: 'pushrate',
+//             account: '',
+//             start_from: -100,
+//             read_until: 0,
+//             replayOnReconnect: false
+//             // scope: '',
+//             // table: 'producers',
+//             // payer: '',
+//             // get data from the last full round
+//             // start_from: -12 * 21,
+//             // filter_op: "or",
+//             // filters: [
+//             //     {field: "payer", value: "sweden"},
+//             //     {field: "payer", value: "rioblocks"},
+//             //     {field: "payer", value: "eosusa"}
+//             // ]
+//         });
+//
+//         stream.on("error", data => {
+//             console.log('[Stream] Error:', data);
+//         });
+//
+//         let counter = 0;
+//         // let lastBlock = 0;
+//         for await (const action of stream) {
+//
+//             // Finish on the stream end
+//             if (action === null) break;
+//             const content = action.content;
+//
+//             // if (lastBlock === 0) {
+//             //     lastBlock = content.block_num;
+//             // } else {
+//             //     if (content.block_num != lastBlock + 1) {
+//             //         console.error(`Expected block number: ${lastBlock + 1}, Received: ${content.block_num}`);
+//             //     }
+//             //     lastBlock = content.block_num;
+//             // }
+//
+//             console.log(`[${counter} @ ${content.block_num}] ${content.act.account}::${content.act.name}`);
+//
+//             // let line = '';
+//             // if (action.mode === 'history') {
+//             //     line += '[HIST ACTION] ';
+//             // } else if (action.mode === 'live') {
+//             //     line += '[LIVE ACTION] ';
+//             // }
+//             // line += `[${content['@timestamp']}] `;
+//             // line += `Block: ${content.block_num} | `;
+//             // line += `Producer: ${content.producer.padEnd(12, ' ')} | `;
+//             // line += `Global Sequence: ${content.global_sequence.toString().padEnd(18, ' ')} | `;
+//             // line += `Contract: ${content.act.account.padEnd(12, ' ')} | `;
+//             // line += `Action: ${content.act.name.padEnd(12, ' ')} | `;
+//             // console.log(line);
+//
+//             // console.dir(content, {
+//             //     depth: Infinity,
+//             //     colors: true
+//             // });
+//
+//             counter++;
+//         }
+//         console.log('Stream ended after', counter, 'messages');
+//         client.disconnect();
+//     } catch (e: any) {
+//         console.log('[Stream Init] Error:', e.message);
+//         console.log(e);
+//     }
+// })();
 
-            let line = '';
-            if (delta.mode === 'history') {
-                line += '[HIST DELTA] ';
-            } else if (delta.mode === 'live') {
-                line += '[LIVE DELTA] ';
-            }
-            line += `[${content['@timestamp']}] `;
-            line += `Block: ${content.block_num} | `;
-            line += `Producer: ${content.payer.padEnd(12, ' ')} | `;
-            line += `Total Votes: ${content.data.total_votes.toString().padEnd(18, ' ')} | `;
-            console.log(line, content.present);
-            counter++;
-        }
-        console.log('Stream ended after', counter, 'messages');
-        client.disconnect();
-    } catch (e: any) {
-        console.log('Error:', e.message);
-    }
-})();
+// let sum = 0;
+// let total = 0;
+// let count = 0;
+// let min = 0;
+// let max = 0;
 
-(async () => {
-    try {
-        const stream = await client.streamActions({
-            contract: 'eosio',
-            action: 'onblock',
-            account: '',
-            start_from: -10,
-            replayOnReconnect: true
-            // scope: '',
-            // table: 'producers',
-            // payer: '',
-            // get data from the last full round
-            // start_from: -12 * 21,
-            // filter_op: "or",
-            // filters: [
-            //     {field: "payer", value: "sweden"},
-            //     {field: "payer", value: "rioblocks"},
-            //     {field: "payer", value: "eosusa"}
-            // ]
-        });
-        let counter = 0;
-        let lastBlock = 0;
-        for await (const action of stream) {
-            // Finish on the stream end
-            if (action === null) break;
-            const content = action.content;
+(await client.streamDeltas({
+    code: 'eosio.oracle',
+    scope: '',
+    table: 'lastknwnrate',
+    payer: '',
+    start_from: "2025-04-01T00:00:00.000",
+    read_until: "2025-05-01T00:00:00.000",
+    ignore_live: true,
+    replayOnReconnect: true
+    // filter_op: "or",
+    // filters: [
+    //     // {field: 'data.source', value: 'ubitfinex'},
+    //     // {field: 'data.source', value: 'ubitmax'}
+    //     // {
+    //     //     field: 'data.latest_rate.price',
+    //     //     value: 0.06,
+    //     //     operator: 'gt',
+    //     //     asset: "DUOS"
+    //     // }
+    // ]
+})).on('message', (data) => {
+    const content = data.content;
+    console.log(`[${content.timestamp}] Source: ${content.data.source} | Price: ${content.data.latest_rate.price}`);
+    // // Calculate average price
+    // const [amount, _] = content.data.latest_rate.price.split(' ');
+    // sum += parseFloat(amount);
+    // total++;
+    // count++;
+    // if (count === 10) {
+    //     console.log(`Average price: ${sum / total}`);
+    //     count = 0;
+    //     sum = 0;
+    //     total = 0;
+    // }
+    //
+    // if (min === 0) {
+    //     min = parseFloat(amount);
+    // }
+    //
+    // if (parseFloat(amount) < min) {
+    //     min = parseFloat(amount);
+    // }
+    //
+    // if (max === 0) {
+    //     max = parseFloat(amount);
+    // }
+    //
+    // if (parseFloat(amount) > max) {
+    //     max = parseFloat(amount);
+    // }
+    //
+    // console.log(`Min: ${min} | Max: ${max}`);
+});
 
-            if (lastBlock === 0) {
-                lastBlock = content.block_num;
-            } else {
-                if (content.block_num != lastBlock + 1) {
-                    console.error(`Expected block number: ${lastBlock + 1}, Received: ${content.block_num}`);
-                }
-                lastBlock = content.block_num;
-            }
-
-            let line = '';
-            if (action.mode === 'history') {
-                line += '[HIST ACTION] ';
-            } else if (action.mode === 'live') {
-                line += '[LIVE ACTION] ';
-            }
-            line += `[${content['@timestamp']}] `;
-            line += `Block: ${content.block_num} | `;
-            line += `Producer: ${content.producer.padEnd(12, ' ')} | `;
-            line += `Global Sequence: ${content.global_sequence.toString().padEnd(18, ' ')} | `;
-            line += `Contract: ${content.act.account.padEnd(12, ' ')} | `;
-            line += `Action: ${content.act.name.padEnd(12, ' ')} | `;
-            console.log(line);
-            counter++;
-        }
-        console.log('Stream ended after', counter, 'messages');
-        client.disconnect();
-    } catch (e: any) {
-        console.log('Error:', e.message);
-    }
-})();
-
-
-// (await client.streamDeltas({
-//     code: 'eosio',
-//     scope: 'eosio',
-//     table: 'global',
-//     payer: '',
-//     start_from: 0,
-//     read_until: 0
+// (await client.streamActions({
+//     contract: 'eosio.token',
+//     action: 'transfer',
+//     account: '',
+//     start_from: -1000000,
+//     read_until: 0,
+//     filter_op: "or",
+//     filters: [
+//         // {field: '@transfer.to', value: 'eosriobrazil'},
+//         // {field: '@transfer.amount', value: 500, operator: "lt"},
+//         // {field: '@transfer.amount', value: 1000, operator: "gt"},
+//         {field: 'act.data.quantity', value: "1978.36851192 UOS"},
+//         // {field: 'receipts.receiver', value: 'cryptolions1'},
+//         // {field: 'receipts.receiver', value: 'eosriobrazil'}
+//     ]
 // })).on('message', (data) => {
 //     const content = data.content;
-//     console.log(content);
+//     const act = content.act;
+//     // console.log(content);
+//     console.log(`Transfer from ${act.data.from} to ${act.data.to} - ${act.data.quantity} - ${act.data.memo}`, act.data.amount);
 // });
 
 // const globalStream = await client.streamDeltas({
