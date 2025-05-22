@@ -18,10 +18,10 @@ export function replaceMetaFields(content: ActionContent | DeltaContent) {
         }
         if (content[metaKey]) {
             const parsedData = content[metaKey];
+            if (!content.data) {
+                content.data = {};
+            }
             Object.keys(parsedData).forEach((key) => {
-                if (!content.data) {
-                    content.data = {};
-                }
                 content.data[key] = parsedData[key];
             });
             delete content[metaKey];
@@ -30,10 +30,10 @@ export function replaceMetaFields(content: ActionContent | DeltaContent) {
         const metaKey = '@' + content.act.name;
         if (content[metaKey]) {
             const parsedData = content[metaKey];
+            if (!content.act.data) {
+                content.act.data = {};
+            }
             Object.keys(parsedData).forEach((key) => {
-                if (!content.act.data) {
-                    content.act.data = {};
-                }
                 content.act.data[key] = parsedData[key];
             });
             delete content[metaKey];
