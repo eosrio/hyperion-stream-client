@@ -389,11 +389,15 @@ export class HyperionStreamClient {
     ): Promise<HyperionStream<StreamTypeMap[K]['response']>> {
         // create stream instance
         const stream = new HyperionStream<StreamTypeMap[K]['response']>(this, type, request);
+
         // get the request hash to identify unique requests
         const key = await stream.streamRequestHash();
         if (this.streamMap.has(key)) {
-            throw new Error('Similar stream request already exists');
+            // if the stream already exists, return the existing stream
+            console.warn(`Stream already exists, returning existing stream!`);
+            return this.streamMap.get(key) as HyperionStream<StreamTypeMap[K]['response']>;
         }
+
         // save the stream
         this.streams.push(stream);
         // index the stream by request hash
