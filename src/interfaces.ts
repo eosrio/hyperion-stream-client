@@ -51,11 +51,13 @@ export interface HyperionClientOptions {
 }
 
 export interface StreamDeltasRequest {
+    // Required
     code: string;
     table: string;
-    scope: string;
-    payer: string;
-    start_from: number | string;
+    // Optionals
+    scope?: string;
+    payer?: string;
+    start_from?: number | string;
     read_until?: number | string;
     ignore_live?: boolean;
     filter_op?: 'and' | 'or';
@@ -73,9 +75,10 @@ export interface RequestFilter {
 
 export interface StreamActionsRequest {
     contract: string;
-    account: string;
     action: string;
-    start_from: number | string;
+    // Optionals
+    account?: string;
+    start_from?: number | string;
     read_until?: number | string;
     ignore_live?: boolean;
     filter_op?: 'and' | 'or';
