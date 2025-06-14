@@ -5,7 +5,7 @@ export interface HyperionStreamEvent<T extends StreamResponseTypes> {
     type: string;
     reqUUID: string;
     mode: "live" | "history";
-    message?: string;
+    message?: string | AllowSharedBufferSource;
     messages?: (T)[];
     error: Error;
 }
@@ -74,9 +74,8 @@ export interface RequestFilter {
 }
 
 export interface StreamActionsRequest {
-    contract: string;
-    action: string;
-    // Optionals
+    contract?: string;
+    action?: string;
     account?: string;
     start_from?: number | string;
     read_until?: number | string;

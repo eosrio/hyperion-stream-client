@@ -36,6 +36,8 @@ export class HyperionStream<T extends StreamResponseTypes> {
     private clientRef: HyperionStreamClient;
     lastReceivedBlockNum: number = 0;
 
+    decoder = new TextDecoder();
+
     // live data queue
     private liveQueue: QueueObject<IncomingData<T>>;
     private currentAckCallback?: (ackResponse: any) => void;
@@ -293,20 +295,45 @@ export class HyperionStream<T extends StreamResponseTypes> {
                 });
             }
         } else if (streamEvent.message) {
-            const message = JSON.parse(streamEvent.message);
-            replaceMetaFields(message);
-            this.clientRef.debugLog(`Enqueuing LIVE ${type} trace: ${message.block_num}`);
-            this.liveQueue.push({
-                irreversible: false,
-                mode: streamEvent.mode,
-                type,
-                content: message,
-                uuid: this.reqUUID
-            }).catch(reason => {
-                console.error(`Error processing ${type} trace:`, reason);
-            }).then((value) => {
-                this.clientRef.debugLog(`Dequeued LIVE ${type} trace`, value);
-            });
+            let message: any;
+            if (typeof streamEvent.message === 'string') {
+                try {
+                    message = JSON.parse(streamEvent.message);
+                } catch (e: any) {
+                    console.log(`Failed to parse ${type} trace: ${e.message}`);
+                    return;
+                }
+            } else {
+                if (streamEvent.message.byteLength === 0) {
+                    console.log(`Message is empty`);
+                    return;
+                }
+                const decodedMessage = this.decoder.decode(streamEvent.message);
+                try {
+                    message = JSON.parse(decodedMessage);
+                } catch (e: any) {
+                    console.log(`Failed to parse ${type} trace: ${e.message}`);
+                    return;
+                }
+
+            }
+            try {
+                replaceMetaFields(message);
+                this.clientRef.debugLog(`Enqueuing LIVE ${type} trace: ${message.block_num}`);
+                this.liveQueue.push({
+                    irreversible: false,
+                    mode: streamEvent.mode,
+                    type,
+                    content: message,
+                    uuid: this.reqUUID
+                }).catch(reason => {
+                    console.error(`Error processing ${type} trace:`, reason);
+                }).then((value) => {
+                    this.clientRef.debugLog(`Dequeued LIVE ${type} trace`, value);
+                });
+            } catch (e: any) {
+                console.log(`Failed to parse ${type} trace: ${e.message}`);
+            }
         }
     }
 
