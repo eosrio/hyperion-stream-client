@@ -42,6 +42,8 @@ export class HyperionStream<T extends StreamResponseTypes> {
     private liveQueue: QueueObject<IncomingData<T>>;
     private currentAckCallback?: (ackResponse: any) => void;
 
+    requestHash: string = '';
+
     constructor(
         client: HyperionStreamClient,
         type: StreamTypes,
@@ -76,7 +78,9 @@ export class HyperionStream<T extends StreamResponseTypes> {
         const hashBuffer = await crypto.subtle.digest('SHA-256', msg);
         const hashArray = Array.from(new Uint8Array(hashBuffer)); // convert buffer to byte array
         // convert bytes to hex string
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        this.requestHash = hash;
+        return hash;
     }
 
     async start(socket: Socket): Promise<any> {

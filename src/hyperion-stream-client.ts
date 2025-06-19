@@ -392,6 +392,7 @@ export class HyperionStreamClient {
 
         // get the request hash to identify unique requests
         const key = await stream.streamRequestHash();
+        this.debugLog(`Request hash: ${key}`);
         if (this.streamMap.has(key)) {
             // if the stream already exists, return the existing stream
             console.warn(`Stream already exists, returning existing stream!`);
@@ -531,9 +532,11 @@ export class HyperionStreamClient {
             this.socket.emit('cancel_stream_request', {reqUUID}, (response: any) => {
                 console.log('Cancel response:', response);
                 const stream = this.streamMapByUUID.get(reqUUID);
-                if (stream) {
 
+                if (stream) {
+                    this.streamMap.delete(stream.requestHash);
                 }
+
                 this.streamMapByUUID.delete(reqUUID);
                 this.streams.splice(this.streams.findIndex(s => s.reqUUID === reqUUID), 1);
                 console.log('Stream removed from map:', reqUUID);
