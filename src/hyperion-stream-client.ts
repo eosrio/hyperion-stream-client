@@ -1,73 +1,63 @@
-// noinspection JSUnusedGlobalSymbols
-
 import {queue, QueueObject} from "async";
 import {io, Socket} from "socket.io-client";
 
 import {
     ActionContent,
-    AsyncHandlerFunction,
     DeltaContent,
-    EventData,
     EventListener,
-    ForkData,
     HyperionClientOptions,
+    HyperionStreamEventMap,
     IncomingData,
-    LIBData,
     SavedRequest,
     StreamActionsRequest,
-    StreamDeltasRequest
-} from "./interfaces";
+    StreamClientEvents,
+    StreamDeltasRequest,
+    TypedEventListener,
+    StreamTypeMap, StreamResponseTypes, StreamTypes
+} from "./interfaces.js";
 
-import fetch from "cross-fetch";
-
-export enum StreamClientEvents {
-    DATA = 'data',
-    LIBUPDATE = 'libUpdate',
-    FORK = 'fork',
-    EMPTY = 'empty',
-    CONNECT = 'connect',
-    DRAIN = 'drain',
-    LIBDATA = 'libData',
-}
-
-function trimTrailingSlash(input: string) {
-    if (input.endsWith('/')) {
-        return input.slice(0, input.length - 1);
-    } else {
-        return input;
-    }
-}
+import {trimTrailingSlash} from "./functions.js";
+import {HyperionStream} from "./hyperion-stream.js";
 
 export class HyperionStreamClient {
 
     private socket?: Socket;
     private socketURL?: string;
-    private lastReceivedBlock: number = 0;
-    private dataQueue: QueueObject<IncomingData> | null = null;
+
+    lastReceivedBlockNum: number = 0;
+
     private options: HyperionClientOptions & Record<string, any> = {
         async: true,
         libStream: false,
-        endpoint: ''
+        endpoint: '',
+        connectionTimeout: 5000
     };
 
-    private libDataQueue: QueueObject<IncomingData> | null = null;
-    private reversibleBuffer: IncomingData[] = [];
-
-    private onDataAsync?: AsyncHandlerFunction;
-    private onLibDataAsync?: AsyncHandlerFunction;
+    private libDataQueue: QueueObject<IncomingData<StreamResponseTypes>> | null = null;
+    private reversibleBuffer: IncomingData<StreamResponseTypes>[] = [];
 
     online: boolean = false;
-    savedRequests: SavedRequest[] = [];
+    savedRequests: SavedRequest<StreamTypes>[] = [];
+    requestMap: Map<string, SavedRequest<StreamTypes>> = new Map();
 
-    eventListeners: Map<string, EventListener[]> = new Map();
-    tempEventListeners: Map<string, EventListener[]> = new Map();
+    streams: HyperionStream<StreamResponseTypes>[] = [];
+    // map by request content (prevent duplicated streams)
+    streamMap: Map<string, HyperionStream<StreamResponseTypes>> = new Map();
+    // map by request UUID
+    streamMapByUUID: Map<string, HyperionStream<StreamResponseTypes>> = new Map();
 
-    /**
-     * @typedef {object} BaseOptions
-     * @property {string} endpoint - Hyperion API Endpoint
-     * @property {boolean} async - Enable Asynchronous Mode
-     * @property {boolean} lib_stream - Enable onLibData handler
-     */
+    eventListeners = new Map();
+    tempEventListeners = new Map();
+
+    lastConnectedId?: string;
+    lastIrreversibleBlock = 0;
+    libTimestamp: number = 0;
+    libOffsetArray: number[] = [];
+
+    // private disconnectedOnce = false;
+    private libMonitoringTimeout: any | null = null;
+
+    chainId: string = '';
 
     /**
      * Construct a new streaming client
@@ -107,7 +97,7 @@ export class HyperionStreamClient {
      */
     public disconnect() {
         if (this.socket) {
-            this.lastReceivedBlock = 0;
+            this.lastReceivedBlockNum = 0;
             this.socket.disconnect();
             this.savedRequests = [];
         } else {
@@ -119,7 +109,7 @@ export class HyperionStreamClient {
      * Get the last block number received
      */
     get lastBlockNum(): number {
-        return this.lastReceivedBlock;
+        return this.lastReceivedBlockNum;
     }
 
     /**
@@ -129,66 +119,50 @@ export class HyperionStreamClient {
     public setEndpoint(endpoint: string) {
         if (endpoint) {
             this.socketURL = trimTrailingSlash(endpoint);
+            if (this.socketURL.endsWith('/stream')) {
+                this.socketURL = this.socketURL.slice(0, -7);
+            }
         } else {
             console.error('URL not informed');
         }
     }
 
-    private pushToBuffer(task: IncomingData): void {
-        if (this.options.libStream) {
-            this.reversibleBuffer.push(task);
-        }
-    }
-
-    private setupIncomingQueue(): void {
-        // setup incoming queue
-        this.dataQueue = queue((task: IncomingData, taskCallback) => {
-            task.irreversible = false;
-            this.emit(StreamClientEvents.DATA, task);
-            this.pushToBuffer(task);
-            if (this.onDataAsync) {
-                this.onDataAsync(task).then(() => {
-                    taskCallback();
-                });
-            } else {
-                taskCallback();
-            }
-        }, 1);
-
-        // assign an error callback
-        this.dataQueue.error((err) => {
-            if (err) {
-                console.error('task experienced an error');
-            }
-        });
-
-        this.dataQueue.drain(() => {
-            this.emit<void>(StreamClientEvents.DRAIN);
-        });
-
-        this.dataQueue.empty(() => {
-            this.emit<void>(StreamClientEvents.EMPTY);
-        });
-    }
-
     private setupIrreversibleQueue(): void {
         // irreversible queue
         if (this.options.libStream) {
-            this.libDataQueue = queue((task: IncomingData, callback) => {
+            this.libDataQueue = queue((task: IncomingData<StreamResponseTypes>, callback) => {
                 task.irreversible = true;
                 this.emit(StreamClientEvents.LIBDATA, task);
-                if (this.onLibDataAsync) {
-                    this.onLibDataAsync(task).then(() => {
-                        callback();
-                    });
-                } else {
-                    callback();
-                }
+                callback();
             }, 1);
         }
     }
 
     private handleLibUpdate(msg: any) {
+
+        if (msg.block_num && this.options.libMonitor) {
+            if (this.lastIrreversibleBlock > 0 && this.libTimestamp > 0) {
+                this.libOffsetArray.push(Date.now() - this.libTimestamp);
+                if (this.libOffsetArray.length > 10) {
+                    this.libOffsetArray.shift();
+                }
+            }
+            this.lastIrreversibleBlock = msg.block_num;
+            this.libTimestamp = Date.now();
+            if (this.libMonitoringTimeout) {
+                clearTimeout(this.libMonitoringTimeout);
+            }
+            if (this.libOffsetArray.length > 1) {
+                const averageOffset = this.libOffsetArray.reduce((a, b) => a + b, 0) / this.libOffsetArray.length;
+                const nextLibLimit = averageOffset + 5000;
+                if (this.lastIrreversibleBlock > 0) {
+                    this.libMonitoringTimeout = setTimeout(() => {
+                        console.error(`Last irreversible block is stuck for ${nextLibLimit}ms`);
+                    }, nextLibLimit);
+                }
+            }
+        }
+
         if (this.options.libStream) {
             while (this.reversibleBuffer.length > 0) {
                 if (this.reversibleBuffer[0]) {
@@ -212,176 +186,170 @@ export class HyperionStreamClient {
             }
         }
 
-        this.emit<LIBData>(StreamClientEvents.LIBUPDATE, msg);
+        this.emit(StreamClientEvents.LIBUPDATE, msg);
+    }
 
-        for (const request of this.savedRequests) {
-            if (request.req.read_until && request.req.read_until !== 0) {
-                if (request.req.read_until < msg.block_num) {
-                    this.disconnect();
+    private handleSocketMessage(msg: any, ackCallback?: (ackResponse: any) => void) {
+
+        // console.log(Date.now(), msg.type, msg.mode, msg.reqUUID, msg.targets, msg.messages?.length);
+
+        if (msg.targets) {
+            msg.targets.forEach((target: string) => {
+                this.streamMapByUUID.get(target)?.handleIncomingMessage(msg);
+            });
+            if (ackCallback) {
+                ackCallback({status: true});
+            }
+        } else {
+            if (msg.reqUUID) {
+                this.debugLog(`[CLIENT] Received message for ${msg.reqUUID} (${msg.type})`);
+                const trackedStream = this.streamMapByUUID.get(msg.reqUUID);
+                if (!trackedStream) {
+                    console.log(`Untracked stream (${msg.reqUUID}), something went wrong!`);
+                    return;
                 }
+                this.streamMapByUUID.get(msg.reqUUID)?.handleIncomingMessage(msg, ackCallback);
+            } else {
+                console.log('Received message without reqUUID');
+                console.log(msg);
             }
         }
+    }
+
+    private handleConnect(): void {
+        if (this.lastConnectedId) {
+            this.debugLog(`Reconnecting to ${this.socketURL} - sending previous socket id: ${this.lastConnectedId})`);
+            this.socket?.emit('reconnect', {last_id: this.lastConnectedId});
+        }
+        this.lastConnectedId = this.socket?.id;
+        this.debugLog(`Connected - socket id: ${this.socket?.id}`);
+        this.online = true;
+        // Fire the connect event
+        this.emit(StreamClientEvents.CONNECT);
+        // process any pending streams
+        this.processPendingStreams().catch(console.log);
+    }
+
+    private async handleResendRequests(args: any): Promise<void> {
+        try {
+            if (args.last_id) {
+                // call streams to resend requests
+                this.debugLog(`Resending requests...`);
+                for (const stream of this.streams) {
+                    if (this.socket) {
+                        this.streamMapByUUID.delete(stream.reqUUID);
+
+                        // continue from the last block received
+                        if (stream.lastReceivedBlockNum > 0) {
+                            stream.request.start_from = stream.lastReceivedBlockNum + 1;
+                        }
+
+                        const resp = await stream.start(this.socket);
+                        if (resp.status === 'OK') {
+                            this.streamMapByUUID.set(resp.reqUUID, stream);
+                        }
+                    }
+                }
+            }
+        } catch (e: any) {
+            console.log(`Error resending requests: ${e.message}`);
+        }
+    }
+
+    private handleHandshake(msg: any): void {
+        this.debugLog('handshake', msg);
+        if (msg.chain_id) {
+            this.chainId = msg.chain_id;
+        }
+    }
+
+    private handleForkEvent(msg: any): void {
+        this.emit(StreamClientEvents.FORK, msg);
+    }
+
+    private handleStatus(status: string): void {
+        switch (status) {
+            case 'relay_restored': {
+                if (!this.online) {
+                    this.online = true;
+                    this.resendRequests().catch(console.log);
+                }
+                break;
+            }
+            case 'relay_down': {
+                this.online = false;
+                break;
+            }
+            default: {
+                console.log(status);
+            }
+        }
+    }
+
+    private handleDisconnect(): void {
+        this.online = false;
+        console.log('disconnected!');
     }
 
     private async setupSocket(): Promise<void> {
         return new Promise((resolve, reject) => {
+
             if (!this.socketURL) {
-                reject();
-            } else {
-                this.socket = io(this.socketURL, {
-                    transports: ["websocket"],
-                    path: '/stream'
-                });
-                this.socket.on('connect', () => {
-                    this.debugLog('connected');
-                    this.online = true;
-                    this.emit<void>(StreamClientEvents.CONNECT);
-                    this.resendRequests().catch(console.log);
-                    resolve();
-                });
-
-                this.socket.on('error', (msg) => {
-                    console.log(msg);
-                });
-
-                this.socket.on('lib_update', this.handleLibUpdate.bind(this));
-
-                this.socket.on('fork_event', (msg) => {
-                    this.emit<ForkData>(StreamClientEvents.FORK, msg);
-                });
-
-                this.socket.on('message', (msg: any) => {
-                    if ((this.onDataAsync || this.onLibDataAsync) && (msg.message || msg['messages'])) {
-                        switch (msg.type) {
-                            case 'delta_trace': {
-                                if (msg['messages']) {
-                                    msg['messages'].forEach((message: DeltaContent) => {
-                                        this.processDeltaTrace(message, msg.mode);
-                                    });
-                                } else {
-                                    this.processDeltaTrace(JSON.parse(msg.message), msg.mode);
-                                }
-                                break;
-                            }
-                            case 'action_trace': {
-                                if (msg['messages']) {
-                                    msg['messages'].forEach((message: ActionContent) => {
-                                        this.processActionTrace(message, msg.mode);
-                                    });
-                                } else {
-                                    this.processActionTrace(JSON.parse(msg.message), msg.mode);
-                                }
-                                break;
-                            }
-                        }
-                    }
-                });
-
-                this.socket.on('status', (status) => {
-                    switch (status) {
-                        case 'relay_restored': {
-                            if (!this.online) {
-                                this.online = true;
-                                this.resendRequests().catch(console.log);
-                            }
-                            break;
-                        }
-                        case 'relay_down': {
-                            this.online = false;
-                            break;
-                        }
-                        default: {
-                            console.log(status);
-                        }
-                    }
-                });
-
-                this.socket.on('disconnect', () => {
-                    this.online = false;
-                    console.log('disconnected!');
-                    // setTimeout(() => {
-                    //     this.connect().catch(console.log);
-                    // }, 3000);
-                });
+                throw new Error('Socket URL not defined');
             }
+
+            this.socket = io(this.socketURL, {
+                reconnection: true,
+                reconnectionDelay: 1000,
+                transports: ["websocket"],
+                path: '/stream',
+                timeout: this.options.connectionTimeout,
+                extraHeaders: {
+                    'x-hyperion-client-last-id': this.lastConnectedId || '',
+                }
+            });
+            this.socket.on('resend_requests', this.handleResendRequests.bind(this));
+            this.socket.on('handshake', this.handleHandshake.bind(this));
+            this.socket.on('lib_update', this.handleLibUpdate.bind(this));
+            this.socket.on('fork_event', this.handleForkEvent.bind(this));
+            this.socket.on('message', this.handleSocketMessage.bind(this));
+            this.socket.on('status', this.handleStatus.bind(this));
+            this.socket.on('disconnect', this.handleDisconnect.bind(this));
+            this.socket.on('connect_error', reject);
+            this.socket.on('connect', () => {
+                this.handleConnect();
+                resolve();
+            });
         });
     }
 
     /**
-     * Start session. Handlers should be defined before this method is called
+     * Start session
      * @example
-     * connect(()=>{
+     * connect(() => {
      *     console.log('Connection was successful!');
      * });
      */
     public async connect(): Promise<void> {
-        this.setupIncomingQueue();
-        this.setupIrreversibleQueue();
         if (!this.socketURL) {
             throw new Error('endpoint was not defined!');
         }
+
+        this.setupIrreversibleQueue();
+
         this.debugLog(`Connecting to ${this.socketURL}...`);
-        await this.setupSocket();
-    }
 
-    /**
-     * Internal method to parse an action streaming trace
-     * @param action
-     * @param mode
-     * @private
-     */
-    private processActionTrace(action: ActionContent, mode: "live" | "history") {
-        const metaKey = '@' + action['act'].name;
-        if (action[metaKey]) {
-            const parsedData = action[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!action['act']['data']) {
-                    action['act']['data'] = {};
-                }
-                action['act']['data'][key] = parsedData[key];
-            });
-            delete action[metaKey];
-        }
-        if (this.dataQueue) {
-            this.dataQueue.push({
-                type: 'action',
-                mode: mode,
-                content: action,
-                irreversible: false
-            }).catch(console.log);
-            this.lastReceivedBlock = action['block_num'];
-        }
-    }
-
-    /**
-     * Internal method to parse a delta streaming trace
-     * @param delta
-     * @param mode
-     * @private
-     */
-    private processDeltaTrace(delta: DeltaContent, mode: "live" | "history") {
-        let metaKey = '@' + delta['table'];
-        if (delta[metaKey + '.data']) {
-            metaKey = metaKey + '.data'
-        }
-        if (delta[metaKey]) {
-            const parsedData = delta[metaKey];
-            Object.keys(parsedData).forEach((key) => {
-                if (!delta['data']) {
-                    delta['data'] = {};
-                }
-                delta['data'][key] = parsedData[key];
-            });
-            delete delta[metaKey];
-        }
-        if (this.dataQueue) {
-            this.dataQueue.push({
-                type: 'delta',
-                mode: mode,
-                content: delta,
-                irreversible: false
-            }).catch(console.log);
-            this.lastReceivedBlock = delta['block_num'];
+        try {
+            // Connect using socket.io-client's built-in timeout option
+            await this.setupSocket();
+        } catch (error: any) {
+            // If we get here with an error, make sure to clean up any partial connection
+            if (this.socket && !this.online) {
+                this.socket.disconnect();
+            }
+            // Emit an error event
+            this.emit(StreamClientEvents.ERROR, error);
+            throw error;
         }
     }
 
@@ -410,152 +378,71 @@ export class HyperionStreamClient {
     }
 
     /**
-     * Request filter definition
-     * @typedef {Object} requestFilter
-     * @property {string} field - Filter Field (ex. "act.data.from")
-     * @property {string} value - Filter value
+     * Internal method to create a new stream request
+     * @param request
+     * @param type
+     * @private
      */
+    private async createRequest<K extends keyof StreamTypeMap>(
+        request: StreamTypeMap[K]['request'],
+        type: K
+    ): Promise<HyperionStream<StreamTypeMap[K]['response']>> {
+        // create stream instance
+        const stream = new HyperionStream<StreamTypeMap[K]['response']>(this, type, request);
 
-    /**
-     * Action request definition
-     * @typedef {Object} StreamActionsRequest
-     * @property {string} contract - Contract name
-     * @property {string} account - Account to filter for
-     * @property {string} action - Action name to filter
-     * @property {[RequestFilter]} filters - Array of filters
-     * @property {number} [start_from=0] - Starting block number
-     * @property {number} [read_until=0] - Read until this block number
-     */
+        // get the request hash to identify unique requests
+        const key = await stream.streamRequestHash();
+        this.debugLog(`Request hash: ${key}`);
+        if (this.streamMap.has(key)) {
+            // if the stream already exists, return the existing stream
+            console.warn(`Stream already exists, returning existing stream!`);
+            return this.streamMap.get(key) as HyperionStream<StreamTypeMap[K]['response']>;
+        }
+
+        // save the stream
+        this.streams.push(stream);
+        // index the stream by request hash
+        this.streamMap.set(key, stream);
+        // check if the client socket is connected
+        if (this.socket && this.socket.connected) {
+            // the socket is already connected, attach the socket to start the stream
+            const resp = await stream.start(this.socket);
+            if (resp.status === 'OK') {
+                this.streamMapByUUID.set(resp.reqUUID, stream);
+            }
+            return stream;
+        } else {
+            return stream;
+        }
+    }
 
     /**
      * Send a request for a filtered action traces stream
      * @param {StreamActionsRequest} request - Action Request Options
      */
-    async streamActions(request: StreamActionsRequest): Promise<any> {
-        if (this.socket && this.socket.connected) {
-            try {
-                await this.checkLastBlock(request);
-            } catch (e: any) {
-                return {status: 'ERROR', error: e.message};
-            }
-            return new Promise((resolve, reject) => {
-                if (this.socket) {
-                    this.socket.emit('action_stream_request', request, (response: any) => {
-                        this.debugLog(response);
-                        if (response.status === 'OK') {
-                            this.savedRequests.push({type: 'action', req: request});
-                            response['startingBlock'] = request.start_from;
-                            resolve(response);
-                        } else {
-                            reject(response);
-                        }
-                    });
-                } else {
-                    reject({status: false, error: 'socket was not created'});
-                }
-            });
-        } else {
-            throw new Error('Client is not connected! Please call connect before sending requests');
-        }
+    async streamActions(request: StreamActionsRequest) {
+        return this.createRequest(request, 'action');
     }
-
-    /**
-     * Delta request definition
-     * @typedef {Object} StreamDeltasRequest
-     * @property {string} code - Contract name
-     * @property {string} table - Table
-     * @property {string} scope - Scope
-     * @property {string} payer - Payer account
-     * @property {number} [start_from=0] - Starting block number
-     * @property {number} [read_until=0] - Read until this block number
-     */
 
     /**
      * Send a request for a filtered delta traces stream
      * @param {StreamDeltasRequest} request - Delta Request Options
      */
-    async streamDeltas(request: StreamDeltasRequest): Promise<any> {
-        if (this.socket && this.socket.connected) {
-            try {
-                await this.checkLastBlock(request);
-            } catch (e: any) {
-                return {status: 'ERROR', error: e.message};
-            }
-            return new Promise((resolve, reject) => {
-                if (this.socket) {
-                    this.socket.emit('delta_stream_request', request, (response: any) => {
-                        this.debugLog(response);
-                        if (response.status === 'OK') {
-                            this.savedRequests.push({type: 'delta', req: request});
-                            response['startingBlock'] = request.start_from;
-                            resolve(response);
-                        } else {
-                            reject(response);
-                        }
-                    });
-                } else {
-                    reject({status: false, error: 'socket was not created'});
-                }
-            });
-        } else {
-            throw new Error('Client is not connected! Please call connect before sending requests');
-        }
+    async streamDeltas(request: StreamDeltasRequest) {
+        return this.createRequest(request, 'delta');
     }
 
-
-    /**
-     * Check if the start_from value should be updated or not
-     * @param request - Request object to verify
-     */
-    private async checkLastBlock(request: StreamActionsRequest | StreamDeltasRequest) {
-        if (String(request.start_from).toUpperCase() === 'LIB') {
-            let url;
-            url = this.options.chainApi ? this.options.chainApi : this.socketURL;
-            url += '/v1/chain/get_info';
-            if (url) {
-                try {
-                    const getInfoResponse = await fetch(url);
-                    const json = await getInfoResponse.json() as any;
-                    if (json) {
-                        if (json['last_irreversible_block_num']) {
-                            request.start_from = json['last_irreversible_block_num'];
-                            this.debugLog(`Stream starting at lib (block ${request.start_from})`);
-                        }
-                    }
-                } catch (e: any) {
-                    throw new Error(`get_info failed on: ${url} | error: ${e.message}`);
-                }
-            }
-        } else if (request.start_from !== 0 && this.lastReceivedBlock) {
-            if(typeof request.start_from) {
-
-            }
-            if (Number(request.start_from)< this.lastReceivedBlock) {
-                request.start_from = this.lastReceivedBlock;
-            }
-        }
-    }
-
-    private debugLog(...args: any[]): void {
+    debugLog(...args: any[]): void {
         if (this.options.debug) {
             console.log('[hyperion:debug]', ...args);
         }
     }
 
-    public setAsyncDataHandler(handler: AsyncHandlerFunction) {
-        this.onDataAsync = handler;
-    }
-
-    public setAsyncLibDataHandler(handler: AsyncHandlerFunction) {
-        this.onLibDataAsync = handler;
-    }
-
-    private emit<T extends EventData>(event: StreamClientEvents | string, data?: T): void {
+    emit<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(event: K, data?: HyperionStreamEventMap<ActionContent | DeltaContent>[K]): void {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
-            listeners.forEach((l: EventListener) => l(data));
+            listeners.forEach((listener: EventListener<ActionContent | DeltaContent>) => listener(data));
         }
-
         const tempListeners = this.tempEventListeners.get(event);
         if (tempListeners && tempListeners.length > 0) {
             const listener = tempListeners.shift();
@@ -565,7 +452,10 @@ export class HyperionStreamClient {
         }
     }
 
-    public once(event: StreamClientEvents | string, listener: EventListener): void {
+    public once<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(
+        event: K,
+        listener: TypedEventListener<ActionContent | DeltaContent, K>
+    ): void {
         if (typeof listener !== 'function') {
             throw new Error('Event listener must be a function');
         }
@@ -576,7 +466,10 @@ export class HyperionStreamClient {
         }
     }
 
-    public on(event: StreamClientEvents | string, listener: EventListener): void {
+    public on<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(
+        event: K,
+        listener: TypedEventListener<ActionContent | DeltaContent, K>
+    ): void {
         if (typeof listener !== 'function') {
             throw new Error('Event listener must be a function');
         }
@@ -587,18 +480,71 @@ export class HyperionStreamClient {
         }
     }
 
-    public off(event: StreamClientEvents | string, listener: EventListener): void {
-        // remove from fixed list
+    public off<K extends keyof HyperionStreamEventMap<ActionContent | DeltaContent>>(
+        event: K,
+        listener: TypedEventListener<ActionContent | DeltaContent, K>
+    ): void {
+
         const listeners = this.eventListeners.get(event);
         if (listeners && listeners.length > 0) {
-            const idx = listeners.findIndex(l => l === listener);
+            const idx = listeners.findIndex((l: TypedEventListener<ActionContent | DeltaContent, K>) => l === listener);
             listeners.splice(idx, 1);
         }
-        // remove from temporary list
+
         const tempListeners = this.tempEventListeners.get(event);
         if (tempListeners && tempListeners.length > 0) {
-            const idx = tempListeners.findIndex(l => l === listener);
+            const idx = tempListeners.findIndex((l: TypedEventListener<ActionContent | DeltaContent, K>) => l === listener);
             tempListeners.splice(idx, 1);
+        }
+    }
+
+    private async processPendingStreams() {
+        if (!this.socket) {
+            return;
+        }
+        for (let stream of this.streams) {
+            if (!stream.started) {
+                const resp = await stream.start(this.socket);
+                if (resp.status === 'OK') {
+                    this.streamMapByUUID.set(resp.reqUUID, stream);
+                }
+            } else {
+                console.log('Stream already started:', stream.reqUUID);
+                if (stream.request.replayOnReconnect) {
+                    console.log('Replaying stream:', stream.reqUUID);
+                    this.streamMapByUUID.delete(stream.reqUUID);
+                    const resp = await stream.start(this.socket);
+                    if (resp.status === 'OK') {
+                        this.streamMapByUUID.set(resp.reqUUID, stream);
+                    }
+                }
+            }
+        }
+    }
+
+    stop(reqUUID: string) {
+        console.log('Stopping stream:', reqUUID);
+        this.requestServerCancel(reqUUID);
+    }
+
+    private requestServerCancel(reqUUID: string) {
+        if (this.socket) {
+            this.socket.emit('cancel_stream_request', {reqUUID}, (response: any) => {
+                console.log('Cancel response:', response);
+                const stream = this.streamMapByUUID.get(reqUUID);
+
+                if (stream) {
+                    this.streamMap.delete(stream.requestHash);
+                }
+
+                this.streamMapByUUID.delete(reqUUID);
+                this.streams.splice(this.streams.findIndex(s => s.reqUUID === reqUUID), 1);
+                console.log('Stream removed from map:', reqUUID);
+                console.log(this.streams.map(s => s.reqUUID));
+                // remove from streamMap
+            });
+        } else {
+            console.error('Socket not connected');
         }
     }
 }

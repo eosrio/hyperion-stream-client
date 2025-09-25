@@ -1,13 +1,7 @@
-// noinspection WebpackConfigHighlighting
-
 const path = require('path');
-
 module.exports = {
     entry: './src/bundle-index.ts',
     mode: 'production',
-    externals: {
-        'cross-fetch': 'fetch'
-    },
     module: {
         rules: [
             {
@@ -19,10 +13,21 @@ module.exports = {
     },
     resolve: {
         extensions: ['.ts', '.js', '...'],
+        alias: {
+            './hyperion-stream-client.js': path.resolve(__dirname, 'src/hyperion-stream-client.ts'),
+            './interfaces.js': path.resolve(__dirname, 'src/interfaces.ts'),
+            './functions.js': path.resolve(__dirname, 'src/functions.ts'),
+            './hyperion-stream.js': path.resolve(__dirname, 'src/hyperion-stream.ts')
+        }
     },
     output: {
         filename: 'hyperion-stream-client.js',
-        libraryTarget: 'umd',
+        library: {
+            name: 'HyperionStreamClient',
+            type: 'umd',
+            export: 'default'
+        },
+        globalObject: 'this',
         path: path.resolve(__dirname, 'dist'),
     },
 };

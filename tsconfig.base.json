@@ -9,12 +9,15 @@
     "lib": [
       "ES2019",
       "ES2020",
-      "esnext"
+      "esnext",
+      "DOM"
     ],
     "newLine": "lf",
     "stripInternal": true,
     "strict": true,
+    "noImplicitAny": true,
     "noImplicitReturns": true,
+    "strictNullChecks": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,

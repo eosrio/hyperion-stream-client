@@ -9,3 +9,7 @@ node_modules/
 .env
 .env.test
 .idea
+lib
+source.md
+src.zip
+FULL_DOCUMENTATION.md

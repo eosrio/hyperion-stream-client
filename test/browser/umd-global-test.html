@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyperion Stream Client - UMD Global Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .nav-link { display: inline-block; margin: 10px 0; padding: 8px 15px; background-color: #0066cc; color: white; text-decoration: none; border-radius: 4px; }
+        .nav-link:hover { background-color: #0055aa; }
+        .test-status { display: inline-block; margin-left: 15px; padding: 5px 10px; background-color: #f0ad4e; color: white; border-radius: 4px; font-weight: bold; }
+    </style>
+
+    <!-- Console Logger Script -->
+    <script src="console-logger.js"></script>
+
+    <!-- Load the UMD bundle directly -->
+    <script src="../../dist/hyperion-stream-client.js"></script>
+
+    <!-- Test Script using global access -->
+    <script>
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize console logger
+            window.logger = initConsoleLogger();
+
+            // Log to verify the global object is available
+            console.log("HyperionStreamClient global:", HyperionStreamClient);
+
+            // Try to create a client instance using the global variable
+            try {
+                console.log("Creating client using global HyperionStreamClient");
+                const client = new HyperionStreamClient({
+                    endpoint: 'wss://libre.rioblocks.io',
+                    debug: true
+                });
+
+                console.log("Client created successfully:", client);
+
+                // Set up event handlers
+                client.on("connect", () => {
+                    console.log("Connected to Hyperion Stream API");
+                    // Mark test as completed
+                    markTestCompleted();
+
+                    // Disconnect after a short delay
+                    setTimeout(() => {
+                        console.log("Test completed, disconnecting client");
+                        client.disconnect();
+                    }, 2000);
+                });
+
+                client.on("error", (error) => {
+                    console.error("Connection error:", error);
+                });
+
+                // Set up connect button
+                const connectButton = document.getElementById('connect-button');
+                if (connectButton) {
+                    connectButton.addEventListener('click', () => {
+                        console.log("Connecting to Hyperion Stream API...");
+                        client.connect();
+                    });
+                }
+            } catch (error) {
+                console.error("Error creating client:", error);
+            }
+        });
+    </script>
+</head>
+<body>
+    <h1>Hyperion Stream Client - UMD Global Test</h1>
+    <p>This test loads the UMD bundle directly and accesses the HyperionStreamClient globally.</p>
+
+    <div>
+        <a href="/" class="nav-link">Back to All Tests</a>
+        <span id="test-status" class="test-status">PENDING</span>
+    </div>
+
+    <div style="margin: 20px 0;">
+        <button id="connect-button">Connect to Hyperion Stream</button>
+    </div>
+
+    <p>The console output will appear below. This is especially useful for testing on mobile devices.</p>
+</body>
+</html>

@@ -1,10 +1,17 @@
-import {HyperionStreamClient} from "./hyperion-stream-client";
+import {HyperionStreamClient} from "./hyperion-stream-client.js";
 
-// @ts-ignore
-if (typeof window !== 'undefined') {
-    // @ts-ignore
-    window['HyperionStreamClient'] = HyperionStreamClient;
+// Declare global window interface to avoid TypeScript errors
+declare global {
+    interface Window {
+        HyperionStreamClient: typeof HyperionStreamClient;
+    }
 }
 
-export * from './interfaces';
-export * from './hyperion-stream-client';
+if (typeof window !== 'undefined') {
+    // Ensure backward compatibility with direct global access
+    window.HyperionStreamClient = HyperionStreamClient;
+}
+
+// Export as both default and named export for maximum compatibility
+export default HyperionStreamClient;
+export {HyperionStreamClient};
