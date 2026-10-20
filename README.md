@@ -1,228 +1,159 @@
 # Hyperion Stream Client
 
-Streaming Client for Hyperion History API (v3+)
+Typed action and table-delta subscriptions over Hyperion's Socket.IO `/stream` transport.
+Supports Node.js 22/24, ES modules, CommonJS, and modern browsers.
 
-### Usage
+This checkout contains the client preparation for Hyperion 4.5. The client versions
+independently of the server. Merging changes does not publish an npm release or qualify
+every server deployment. See [migration notes](docs/MIGRATION.md) and the
+[launch checklist](docs/LAUNCH.md).
 
-#### Supported Environments
+## Usage
 
-- Node.js v16 and up
-  - ES Module
-  - CommonJS
-- Browsers
-  - ES Module - Angular, React and other frameworks
-  - UMD
-
-## Quick Start
-
-### Installing via npm package
-
-```bash
-npm install @eosrio/hyperion-stream-client --save
+```sh
+npm install @eosrio/hyperion-stream-client
 ```
 
+```js
+import {HyperionStreamClient} from '@eosrio/hyperion-stream-client';
+// CommonJS: const {HyperionStreamClient} = require('@eosrio/hyperion-stream-client');
 
-#### Importing the client
+const client = new HyperionStreamClient({endpoint: 'https://your-hyperion.example'});
+client.on('error', error => console.error(error));
 
-ESM (Node and Browser):
-```typescript
-import {HyperionStreamClient} from "@eosrio/hyperion-stream-client";
+try {
+    await client.connect();
+    const stream = await client.streamActions({
+        contract: 'eosio.token',
+        action: 'transfer',
+        start_from: -100,
+        replayOnReconnect: true
+    });
+    for await (const message of stream) {
+        console.log(message.mode, message.content);
+        // Await application processing here. Break cancels this subscription.
+    }
+} finally {
+    client.disconnect();
+}
 ```
 
-CommonJs (Node):
-```javascript
-const {HyperionStreamClient} = require('@eosrio/hyperion-stream-client');
+Alternatively, use `stream.on('message', message => ...)` and `stream.stop()`.
+The first message listener receives cached messages that arrived during subscription setup.
+An event-only stream retains a bounded recent-message cache for a later iterator. Use one
+iterator per stream for sequential asynchronous work. Event callbacks do not delay packet ACKs.
+
+`connect()` waits for the chain handshake and rejects on connection failure or timeout.
+Concurrent calls share one connection. `disconnect()` closes all subscriptions, completes
+waiting iterators, and clears connection state; create new subscriptions after reconnecting
+explicitly. A transient transport loss preserves established subscriptions for automatic reconnect.
+
+## Requests
+
+`await client.streamActions(request)` and `await client.streamDeltas(request)` return a
+`HyperionStream`. Identical normalized requests share a stream, including their consumers
+and cancellation. Delivery flags are part of identity. Caller-owned requests are copied.
+
+| Parameter | Meaning |
+| --- | --- |
+| `contract`, `action`, `account` | Action selectors. Supply an account, or both contract and action. |
+| `code`, `table`, `scope`, `payer` | Delta selectors. Code and table are required. |
+| `start_from` | `0`/omitted: live from head. Positive integer: absolute block. Negative integer: offset from head. ISO timestamp: historical time. Numeric strings normalize to numbers. Legacy `'LIB'` resolves using the chain API. |
+| `read_until` | Historical upper bound, using a block number, offset, or ISO timestamp. `0`/omitted means no explicit historical bound. |
+| `ignore_live` | Set `true` for finite history. The iterator completes after `history_end` and buffered irreversible delivery. |
+| `filters`, `filter_op` | Server-side filters and `and`/`or` combination. Support and history/live equivalence depend on the server. |
+| `replayOnReconnect` | Default `false`. If enabled, replay inclusively from the last delivered block after reconnect. |
+
+For finite reads use `ignore_live: true` with a historical `start_from` and, optionally,
+`read_until`. A live subscription does **not** stop automatically at `read_until`.
+Exact account/contract/table names are the portable baseline; wildcard, filter, and
+optional-scope behavior require server qualification. See [launch limitations](docs/LAUNCH.md).
+
+```js
+const history = await client.streamDeltas({
+    code: 'eosio.token', table: 'accounts', scope: 'alice',
+    start_from: 1000, read_until: 2000, ignore_live: true
+});
+for await (const row of history) console.log(row.content);
 ```
 
-<br>
+Replay provides **at-least-once delivery**, subject to the server retaining the requested
+history. Replaying the last block avoids skipping records after a partial batch; consumers
+must tolerate duplicates. There is no durable consumer checkpoint or exactly-once guarantee.
+Handle `client.on('fork', ...)` when applying reversible data. LIB mode buffers records
+until confirmation and removes buffered forked records.
 
-### Browser library (served from public Hyperion APIs)
+Hyperion 4.5 represents global, receiver, and authorization uint64 sequences as canonical
+decimal strings. The client preserves those strings through history, binary live packets,
+metadata, and LIB buffers. Store them as strings or use `BigInt` for arithmetic; converting
+them to `Number` can lose identity. The public action types describe this 4.5 contract;
+older servers with numeric sequences require explicit application migration.
 
-Without installing via npm, you can also load the webpack bundle directly:
+## Options and events
+
+| Client option | Default | Purpose |
+| --- | --- | --- |
+| `endpoint` | Required | Hyperion origin, with optional trailing `/stream`. The reverse proxy must forward `/stream` and WebSocket upgrades. |
+| `chainApi` | Endpoint | HTTP chain API used for legacy `'LIB'` lookup. |
+| `connectionTimeout` | `5000` | Initial and reconnect handshake deadline, in milliseconds. |
+| `requestTimeout` | `10000` | Subscription ACK and legacy chain lookup deadline, in milliseconds. |
+| `libStream` | `false` | Deliver only confirmed data, marked `irreversible: true`. |
+| `libMonitor` | `false` | Report stalled LIB updates through the client error event. |
+| `maxQueueSize` | `1000` | Per-stream iterator/cache and history-to-live buffer bound. |
+| `maxReversibleBufferSize` | `10000` | Shared bound for data waiting for LIB. |
+| `debug` | `false` | Enable diagnostic logs. |
+
+Limits must be positive integers. `stream.setMaxQueueSize(n)` adjusts one stream.
+An active iterator or unobserved stream that overflows fails explicitly; it does not silently
+skip records. Size queues for server batch sizes and processing latency. Event-only caches
+retain recent records. A packet ACK means accepted into bounded client memory, not committed
+by the application. Use your own durable, idempotent processing and replay checkpoints.
+
+Client events: `connect`, `error`, `data`, `libData`, `libUpdate`, `fork`.
+Stream events: `start`, `message`, `historyEnd`, `error`, `end`.
+Completion and failure state remain observable when listeners attach after setup has finished.
+Both support `on`, `off`, and `once`. For a `start` listener, create the stream before
+connecting, attach the listener, then call `connect()`. Stream failures reject iterator reads;
+setup failures reject `streamActions`/`streamDeltas` promises. Cancellation completes reads.
+Server error `statusCode`, `retryable`, and `code` fields are retained on the emitted/rejected
+error when supplied, so applications can distinguish retryable projection unavailability.
+
+## Browsers
+
+Bundlers can use the package's ESM export. To test a source checkout directly, build it
+and serve the repository root. A browser import map needs a real ESM dependency:
 
 ```html
-<script src="https://<ENDPOINT>/stream-client.js"></script>
+<script type="importmap">
+{"imports":{"socket.io-client":"https://cdn.jsdelivr.net/npm/socket.io-client@4.8.4/dist/socket.io.esm.min.js"}}
+</script>
+<script type="module">
+import {HyperionStreamClient} from '/lib/esm/index.js';
+const client = new HyperionStreamClient({endpoint: 'https://your-hyperion.example'});
+</script>
 ```
 
-Where `<ENDPOINT>` is the Hyperion API (e.g. `https://eos.hyperion.eosrio.io`)
+For a global constructor use `<script src="/dist/hyperion-stream-client.js"></script>`.
+The UMD bundle is self-contained; it is not an ESM import-map target.
+Automated Chromium tests exercise both formats against a loopback server.
 
-For other usages, the bundle is also available at `dist/hyperion-stream-client.js`
+## Development
 
-<br>
+Node 22/24, TypeScript 7.0.2, and Bun 1.4.3 are the acceptance baseline.
+`package-lock.json` is authoritative; Bun supplies the complete-project checker.
 
-
-### 1. Connection
-
-Set up the endpoint that you want to fetch data from:
-
-```javascript
-const client = new HyperionStreamClient({
-    endpoint: 'https://example.com',
-    debug: true,
-    libStream: false
-});
+```sh
+npm ci
+npm run typecheck
+npm test                 # builds ESM, CommonJS and UMD, then runs local protocol regressions
+npm run test:package     # pack, install externally, check both runtimes and declaration formats
+npx playwright install chromium
+npm run test:browser     # real Chromium ESM and UMD protocol tests
+npm audit
 ```
 
-`https://example.com` is the host, from where `https://example.com/v2/history/...` is served.
+`npm pack` builds all formats through `prepack`. CI runs Node 22/24 on Linux and Windows;
+Chromium acceptance runs on Linux/Node 24. The default tests use no public Hyperion endpoint.
+Manual browser smoke pages are available through `npm run serve:tests`.
 
-- set `libStream` to `true` if you want to enable a stream of only **irreversible data**.
-Don't forget to attach the handler using the method: `setAsyncLibDataHandler(handler: AsyncHandlerFunction)`
-- set `debug`  to `true` to print debugging messages
-
-### 2. Making requests
-
-to ensure the client is connected, requests should be made only after calling the `client.connect()` method, refer to examples
-below;
-
-#### 2.1 Action Stream - client.streamActions
-
-`client.streamActions(request: StreamActionsRequest): void`
-
-
-- `contract` - contract account
-- `action` - action name
-- `account` - notified account name
-- `start_from` - start reading on block or on a specific date. 0=disabled means it will read starting from HEAD block.
-- `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
-- `filters` - actions filter (more details below)
-
-**Notes**
-
-- Block number can be either positive or negative - E.g.: **700** (start from block 700)
-- In case of negative block number, it will be subtracted from the HEAD - E.g.: **-150** (since 150 blocks ago)
-- Date format (ISO 8601) - e.g. 2020-01-01T00:00:00.000Z
-
-```typescript
-import {HyperionStreamClient, StreamClientEvents} from "@eosrio/hyperion-stream-client";
-
-const client = new HyperionStreamClient({
-    endpoint: "http://localhost:1234",
-    debug: true,
-    libStream: false
-});
-
-client.on(StreamClientEvents.LIBUPDATE, (data: EventData) => {
-    console.log(data);
-});
-
-client.on('connect', () => {
-  console.log('connected!');
-});
-
-client.setAsyncDataHandler(async (data) => {
-    console.log(data);
-    // process incoming data, replace with your code
-    // await processSomethingHere();
-})
-
-await client.connect();
-
-client.streamActions({
-  contract: 'eosio',
-  action: 'voteproducer',
-  account: '',
-  start_from: '2020-03-15T00:00:00.000Z',
-  read_until: 0,
-  filters: [],
-});
-
-```
-
-#### 2.1.1 Act Data Filters
-
-You can set up filters to refine your stream. Filters should use fields following the Hyperion Action Data Structure,
-such as:
-
-- `act.data.producers` (on eosio::voteproducer)
-- `@transfer.to` (here the @ prefix is required since transfers have special mappings)
-
-Please refer to
-the [mapping definitions](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts) to
-know which data fields are available
-
-For example, to filter the stream for
-every transfer made to the `eosio.ramfee` account:
-
-```javascript
-client.streamActions({
-    contract: 'eosio.token',
-    action: 'transfer',
-    account: 'eosio',
-    start_from: 0,
-    read_until: 0,
-    filters: [
-        {field: '@transfer.to', value: 'eosio.ramfee'}
-    ],
-});
-``` 
-
-To refine even more your stream, you could add more filters. Remember that adding more filters
-will result in **AND** operations. For **OR** operations setup another request. 
-
-#### 2.2 Delta Stream (contract rows) - client.streamDeltas
-
-`client.streamDeltas(request: StreamDeltasRequest): void`
-
-- `code` - contract account
-- `table` - table name
-- `scope` - table scope
-- `payer` - ram payer
-- `start_from` - start reading on block or on a specific date. 0=disabled means it will read starting from HEAD block.
-- `read_until` - stop reading on block  (0=disable) or on a specific date (0=disabled)
-
-
-
-Example:
-
-Referring to the same pattern as the action stream example above, one could also include a delta stream request
-
-```javascript
-client.streamDeltas({
-    code: 'eosio.token',
-    table: '*',
-    scope: '',
-    payer: '',
-    start_from: 0,
-    read_until: 0,
-});
-``` 
-
-_Note: Delta filters are planned to be implemented soon._
-
-<br>
-
-#### 3. Handling Data
-
-Incoming data handler is defined via the `client.setAsyncDataHandler(async (data)=> void)` method
-
-if you set `libStream` to `true` another stream of only **irreversible data** will be available.
-Don't forget to attach the handler using the method: `setAsyncLibDataHandler(handler: AsyncHandlerFunction)`
-
-data object is structured as follows:
-
-- `type` - _action_ | _delta_
-- `mode` - _live_ | _history_
-- `content` - Hyperion Data Structure (
-  see [action index](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts#L53)
-  and [delta index](https://github.com/eosrio/Hyperion-History-API/blob/main/definitions/index-templates.ts#L212)
-  templates)
-
-```javascript
-client.setAsyncDataHandler(async (data) => {
-    console.log(data);
-    // process incoming data, replace with your code
-    // await processSomethingHere();
-})
-
-// irreversible data stream only for when libStream: true on client connection setup
-client.setAsyncLibDataHandler(async (data) => {
-  console.log(data);
-  // process incoming data, replace with your code
-  // await processSomethingHere();
-})
-```
-
-
-
-Useful information about load-balancing multiple Socket.IO servers:
-https://socket.io/docs/v4/using-multiple-nodes/#NginX-configuration
+MIT license. [Issues](https://github.com/eosrio/hyperion-stream-client/issues).

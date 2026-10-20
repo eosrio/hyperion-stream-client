@@ -1,30 +1,49 @@
 {
   "name": "@eosrio/hyperion-stream-client",
-  "version": "1.0.4",
+  "version": "4.0.0-rc.3",
   "description": "Streaming Client for Hyperion History",
-  "main": "./lib/esm/index.js",
+  "main": "./lib/cjs/index.js",
+  "module": "./lib/esm/index.js",
+  "types": "./lib/esm/index.d.ts",
+  "files": ["lib/esm/*.js", "lib/esm/*.d.ts", "lib/cjs/*.js", "lib/cjs/*.d.ts", "lib/cjs/package.json", "dist/hyperion-stream-client.js", "README.md", "LICENSE"],
   "exports": {
     ".": {
-      "import": "./lib/esm/index.js",
-      "require": "./lib/cjs/index.js"
+      "import": {"types": "./lib/esm/index.d.ts", "default": "./lib/esm/index.js"},
+      "require": {"types": "./lib/cjs/index.d.ts", "default": "./lib/cjs/index.js"}
     },
     "./esm": {
+      "types": "./lib/esm/index.d.ts",
       "import": "./lib/esm/index.js"
     },
     "./cjs": {
+      "types": "./lib/cjs/index.d.ts",
       "require": "./lib/cjs/index.js"
     }
   },
   "type": "module",
   "scripts": {
+    "typecheck": "bun check -p tsconfig.json",
+    "build": "npm run build:all",
     "build:esm": "tsc",
     "build:esm:watch": "tsc --watch",
-    "build:cjs": "tsc --p tsconfig.commonjs.json",
+    "build:cjs": "node scripts/build-commonjs.mjs",
     "build:webpack": "webpack",
     "build:webpack:watch": "webpack --watch",
-    "build:all": "npm run build:esm && npm run build:cjs && npm run fix-hybrid-packages && npm run build:webpack",
+    "build:all": "npm run build:esm && npm run build:cjs && npm run build:webpack",
     "fix-hybrid-packages": "node scripts/create-dist-packages.mjs",
-    "test:esm:debug": "node examples/esm_import.mjs --inspect"
+    "example:advanced-filtering": "tsx src/examples/advanced-filtering.ts",
+    "generate-docs": "node scripts/generate-documentation.mjs",
+    "pretest": "npm run build:all",
+    "prepack": "npm run build:all",
+    "test": "node --test test/index.js",
+    "test:watch": "node --test --watch test/index.js",
+    "test:package": "node scripts/verify-package.mjs",
+    "test:browser": "node --test test/browser.test.mjs",
+    "test:connection": "node --test test/connection.test.js",
+    "test:streaming": "node --test test/streaming.test.js",
+    "test:error-handling": "node --test test/error-handling.test.js",
+    "test:api": "node --test test/api.test.js",
+    "serve:tests": "node test/browser/serve-tests.cjs"
   },
   "repository": "eosrio/hyperion-stream-client",
   "author": {
@@ -32,21 +51,20 @@
     "url": "https://eosrio.io"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=22"
   },
   "license": "MIT",
   "dependencies": {
-    "async": "^3.2.4",
-    "socket.io-client": "^4.6.1",
-    "cross-fetch": "^3.1.5"
+    "socket.io-client": "4.8.4"
   },
   "devDependencies": {
-    "@types/async": "^3.2.20",
-    "@types/node": "^20.1.0",
-    "ts-loader": "^9.4.2",
-    "typescript": "5.0.4",
-    "webpack": "^5.82.0",
-    "webpack-cli": "^5.1.0"
+    "@types/node": "22.20.5",
+    "playwright": "1.64.1",
+    "socket.io": "4.8.4",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "webpack": "5.112.0",
+    "webpack-cli": "7.2.3"
   },
   "bugs": {
     "url": "https://github.com/eosrio/hyperion-stream-client/issues"

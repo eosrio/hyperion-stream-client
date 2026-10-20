@@ -1,28 +1,11 @@
-// noinspection WebpackConfigHighlighting
-
-const path = require('path');
-
+const path = require('node:path');
 module.exports = {
-    entry: './src/bundle-index.ts',
+    entry: './lib/esm/bundle-index.js',
     mode: 'production',
-    externals: {
-        'cross-fetch': 'fetch'
-    },
-    module: {
-        rules: [
-            {
-                test: /\.ts?$/,
-                use: 'ts-loader',
-                exclude: /node_modules/,
-            },
-        ],
-    },
-    resolve: {
-        extensions: ['.ts', '.js', '...'],
-    },
     output: {
         filename: 'hyperion-stream-client.js',
-        libraryTarget: 'umd',
-        path: path.resolve(__dirname, 'dist'),
-    },
+        library: { name: 'HyperionStreamClient', type: 'umd', export: 'default' },
+        globalObject: 'this',
+        path: path.resolve(__dirname, 'dist')
+    }
 };

@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Hyperion UMD smoke test</title>
+<script src="/dist/hyperion-stream-client.js"></script>
+<h1>UMD smoke test</h1>
+<pre id="result">Loading…</pre>
+<script type="module">
+const client = new HyperionStreamClient({endpoint:location.origin});
+const stream = await client.streamActions({contract:'eosio.token', action:'transfer'});
+stream.stop();
+document.querySelector('#result').textContent = 'PASS: global constructor, offline subscription and cancellation';
+</script>
+</html>

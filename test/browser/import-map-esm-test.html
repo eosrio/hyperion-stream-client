@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Hyperion ESM smoke test</title>
+<script type="importmap">
+{"imports":{"socket.io-client":"/node_modules/socket.io-client/dist/socket.io.esm.min.js"}}
+</script>
+<h1>ESM smoke test</h1>
+<pre id="result">Loading…</pre>
+<script type="module">
+import {HyperionStreamClient} from '/lib/esm/index.js';
+const client = new HyperionStreamClient({endpoint: location.origin});
+const stream = await client.streamActions({contract:'eosio.token', action:'transfer'});
+stream.stop();
+document.querySelector('#result').textContent = 'PASS: ESM import, construction, offline subscription and cancellation';
+</script>
+</html>
