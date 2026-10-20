@@ -18,9 +18,9 @@ await sleep(200);
 // Event Emitter Example
 (async () => {
     const stream = await client.streamDeltas({
-        code: '',
-        scope: '',
-        table: '',
+        code: 'eosio',
+        scope: 'eosio',
+        table: 'producers',
         payer: 'rioblocks',
         start_from: -10,
         read_until: 0,

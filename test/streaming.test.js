@@ -1,160 +1,207 @@
-import {describe, it, before, after} from 'node:test';
-import {strict as assert} from 'node:assert';
-import {createTestClient, wait, TEST_TIMEOUT} from './setup.js';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fixture, actionRequest, action, delta, until } from './setup.js';
 
-describe('HyperionStreamClient Streaming Tests', async () => {
-    let client;
-
-    // Setup before tests
-    before(async () => {
-        client = await createTestClient();
-        await client.connect();
+test('history ACKs progress before consumers attach, including multiple batches (#14)', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions({
+        ...actionRequest,
+        start_from: 1,
+        ignore_live: true
     });
-
-    // Cleanup after tests
-    after(() => {
-        if (client) {
-            client.disconnect();
-        }
+    for (const start of [1, 21]) {
+        const ack = await f.send({
+            type: 'action_trace',
+            mode: 'history',
+            reqUUID: stream.reqUUID,
+            messages: Array.from({ length: 20 }, (_, i) => action(start + i))
+        });
+        assert.deepEqual(ack, { status: true });
+    }
+    await f.send({ type: 'history_end', reqUUID: stream.reqUUID, mode: 'history' });
+    const result = [];
+    for await (const message of stream) result.push(message.content.block_num);
+    assert.equal(result.length, 40);
+    assert.deepEqual([result[0], result.at(-1)], [1, 40]);
+    assert.equal(f.client.streams.length, 0);
+});
+test('live binary packets wait behind history and then continue into live', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions({ ...actionRequest, start_from: 1 });
+    await f.send({
+        type: 'action_trace',
+        mode: 'live',
+        targets: [stream.reqUUID],
+        message: Buffer.from(JSON.stringify(action(3)))
     });
-
-    await it('should stream actions with event-based API', {timeout: TEST_TIMEOUT}, async () => {
-        // Create a stream for actions
-        const stream = await client.streamActions({
-            contract: 'eosio',
-            action: 'onblock',
-            start_from: -10, // Read just the last 10 blocks
-            read_until: 0, // Only read a few blocks for testing
-        });
-
-        // Set up event listeners
-        let messageReceived = false;
-        let errorOccurred = false;
-
-        stream.on('message', (data) => {
-            // Verify data structure
-            assert.ok(data.uuid, 'UUID should be present in the message');
-            assert.equal(data.type, 'action', 'Message type should be "action"');
-            assert.ok(data.content, 'Content should be present in the message');
-            // check if the message is an action
-            assert.ok(data.content.act.name, 'Action Name should be present in the message');
-            messageReceived = true;
-        });
-
-        stream.on('error', (error) => {
-            console.error('Stream error:', error);
-            errorOccurred = true;
-        });
-
-        // Wait for messages or timeout
-        const startTime = Date.now();
-        while (!messageReceived && Date.now() - startTime < TEST_TIMEOUT - 1000) {
-            await wait(100);
-        }
-
-        // Stop the stream
-        stream.stop();
-
-        // Verify results
-        assert.ok(!errorOccurred, 'No errors should occur during streaming');
-        // Note: We don't assert messageReceived because it depends on the actual data in the blockchain
-        // and might not be available in the test environment
+    await f.send({
+        type: 'action_trace',
+        mode: 'history',
+        reqUUID: stream.reqUUID,
+        messages: [action(1), action(2)]
     });
-
-    it('should stream deltas with event-based API', {timeout: TEST_TIMEOUT}, async () => {
-        // Create a stream for deltas
-        const stream = await client.streamDeltas({
-            code: 'eosio.token',
-            table: 'accounts',
-            scope: 'eosio',
-            start_from: -10, // Read just the last 10 blocks
-            read_until: 0, // Only read a few blocks for testing
-        });
-
-        // Set up event listeners
-        let messageReceived = false;
-        let errorOccurred = false;
-
-        stream.on('message', (data) => {
-            messageReceived = true;
-            // Verify data structure
-            assert.ok(data.uuid, 'UUID should be present in the message');
-            assert.equal(data.type, 'delta', 'Message type should be "delta"');
-            assert.ok(data.content, 'Content should be present in the message');
-        });
-
-        stream.on('error', (error) => {
-            console.error('Stream error:', error);
-            errorOccurred = true;
-        });
-
-        // Wait for messages or timeout
-        const startTime = Date.now();
-        while (!messageReceived && Date.now() - startTime < TEST_TIMEOUT - 1000) {
-            await wait(100);
-        }
-
-        // Stop the stream
-        stream.stop();
-
-        // Verify results
-        assert.ok(!errorOccurred, 'No errors should occur during streaming');
-        // Note: We don't assert messageReceived because it depends on the actual data in the blockchain
-        // and might not be available in the test environment
+    assert.equal(stream.lastReceivedBlockNum, 2);
+    await f.send({ type: 'history_end', reqUUID: stream.reqUUID });
+    const iterator = stream[Symbol.asyncIterator]();
+    const result = [];
+    for (let i = 0; i < 3; i++) result.push((await iterator.next()).value.content.block_num);
+    assert.deepEqual(result, [1, 2, 3]);
+    assert.equal(stream.live, true);
+    await iterator.return();
+});
+test('history-only empty streams complete even when iteration starts after history_end', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions({
+        ...actionRequest,
+        start_from: 1,
+        ignore_live: true
     });
-
-    it('should support async iterator API for actions', {timeout: TEST_TIMEOUT}, async () => {
-        // Create a stream for actions
-        const stream = await client.streamActions({
-            contract: 'eosio',
-            action: 'onblock',
-            start_from: -10, // Read just the last 10 blocks
-            read_until: 0, // Only read a few blocks for testing
+    await f.send({ type: 'history_end', reqUUID: stream.reqUUID });
+    assert.deepEqual(await stream[Symbol.asyncIterator]().next(), { done: true, value: undefined });
+});
+test('delta messages, metadata, and broadcast targets remain independent', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const a = await f.client.streamDeltas({ code: 'eosio.token', table: 'accounts' });
+    const b = await f.client.streamDeltas({ code: 'eosio.token', table: 'accounts', scope: 'bob' });
+    const record = { ...delta(12), '@accounts': { extra: 42 } };
+    const ack = await f.send({
+        type: 'delta_trace',
+        mode: 'live',
+        targets: [a.reqUUID, b.reqUUID, a.reqUUID],
+        messages: [record]
+    });
+    assert.deepEqual(ack, { status: true });
+    const first = (await a[Symbol.asyncIterator]().next()).value;
+    const second = (await b[Symbol.asyncIterator]().next()).value;
+    assert.equal(first.content.data.extra, 42);
+    assert.equal(second.content.data.extra, 42);
+    assert.notEqual(first.content, second.content);
+    assert.equal(a.deliveryCounter, 1);
+});
+test('libStream waits for LIB, removes forked records, and marks confirmed data', async (t) => {
+    const f = await fixture(t, { client: { libStream: true } });
+    await f.client.connect();
+    const stream = await f.client.streamActions(actionRequest);
+    const delivered = [];
+    stream.on('message', (message) => delivered.push(message));
+    for (const block of [10, 11])
+        await f.send({
+            type: 'action_trace',
+            mode: 'live',
+            reqUUID: stream.reqUUID,
+            messages: [action(block)]
         });
-
-        // Use async iterator to process messages
-        let messageCount = 0;
-        let errorOccurred = false;
-
-        try {
-            // Set a timeout to prevent the test from hanging
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Timeout')), TEST_TIMEOUT - 1000);
+    assert.equal(delivered.length, 0);
+    f.sockets[0].emit('fork_event', { starting_block: 11 });
+    f.lib(11);
+    await until(() => delivered.length === 1);
+    assert.equal(delivered[0].content.block_num, 10);
+    assert.equal(delivered[0].irreversible, true);
+    assert.equal(f.client.lastIrreversibleBlock, 11);
+});
+test('irreversible history-only completion waits for confirmation', async (t) => {
+    const f = await fixture(t, { client: { libStream: true } });
+    await f.client.connect();
+    const stream = await f.client.streamActions({
+        ...actionRequest,
+        start_from: 1,
+        ignore_live: true
+    });
+    await f.send({
+        type: 'action_trace',
+        mode: 'history',
+        reqUUID: stream.reqUUID,
+        messages: [action(10)]
+    });
+    await f.send({ type: 'history_end', reqUUID: stream.reqUUID });
+    f.lib(10);
+    const result = [];
+    for await (const message of stream) result.push(message);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].irreversible, true);
+});
+test('event consumers receive history delivered in the subscription ACK frame', async (t) => {
+    const f = await fixture(t, {
+        request: ({ socket, ack, uuid }) => {
+            ack({ status: 'OK', reqUUID: uuid });
+            socket.emit('message', {
+                type: 'action_trace',
+                mode: 'history',
+                reqUUID: uuid,
+                messages: [action(1), action(2), action(3)]
             });
-
-            // Create an async iterator with timeout
-            const iteratorPromise = (async () => {
-                try {
-                    for await (const action of stream) {
-                        messageCount++;
-                        // Verify action structure
-                        assert.ok(action.uuid, 'UUID should be present in the action');
-                        assert.equal(action.type, 'action', 'Action type should be "action"');
-                        assert.ok(action.content, 'Content should be present in the action');
-
-                        // Break after processing a few messages
-                        if (messageCount >= 5) break;
-                    }
-                } catch (error) {
-                    if (error.message !== 'Timeout') {
-                        errorOccurred = true;
-                        console.error('Iterator error:', error);
-                    }
-                }
-            })();
-
-            // Wait for either the iterator to complete or timeout
-            await Promise.race([iteratorPromise, timeoutPromise]).catch(() => {
-                // Timeout is expected if no messages are received
-            });
-        } finally {
-            // Stop the stream
-            stream.stop();
         }
-
-        // Verify results
-        assert.ok(!errorOccurred, 'No errors should occur during streaming with async iterator');
-        // Note: We don't assert messageCount because it depends on the actual data in the blockchain
-        // and might not be available in the test environment
     });
+    await f.client.connect();
+    const stream = await f.client.streamActions({ ...actionRequest, start_from: 1 });
+    const seen = [];
+    stream.on('message', (message) => seen.push(message.content.block_num));
+    await until(() => seen.length === 3);
+    assert.deepEqual(seen, [1, 2, 3]);
+});
+test('stopping from inside a LIB handler cannot resurrect buffered records', async (t) => {
+    const f = await fixture(t, { client: { libStream: true } });
+    await f.client.connect();
+    const stream = await f.client.streamActions(actionRequest);
+    stream.on('message', () => stream.stop());
+    await f.send({
+        type: 'action_trace',
+        mode: 'live',
+        reqUUID: stream.reqUUID,
+        messages: [action(10), action(20)]
+    });
+    f.lib(10);
+    await until(() => f.client.streams.length === 0);
+    assert.equal(f.client.hasBufferedData(stream), false);
+});
+test('completion events remain observable after an immediate history_end', async (t) => {
+    const f = await fixture(t, {
+        request: ({ socket, ack, uuid }) => {
+            ack({ status: 'OK', reqUUID: uuid });
+            socket.emit('message', { type: 'history_end', reqUUID: uuid });
+        }
+    });
+    await f.client.connect();
+    const stream = await f.client.streamActions({
+        ...actionRequest,
+        start_from: 1,
+        ignore_live: true
+    });
+    let ends = 0;
+    let historyEnds = 0;
+    stream.once('end', () => ends++);
+    stream.once('historyEnd', () => historyEnds++);
+    await until(() => ends === 1 && historyEnds === 1);
+    assert.equal(f.client.streams.length, 0);
+});
+test('stop during a mixed confirmed/reversible batch cannot buffer abandoned records', async (t) => {
+    const f = await fixture(t, { client: { libStream: true, maxReversibleBufferSize: 1 } });
+    await f.client.connect();
+    f.lib(10);
+    await until(() => f.client.lastIrreversibleBlock === 10);
+    const stream = await f.client.streamActions(actionRequest);
+    stream.on('message', () => stream.stop());
+    await f.send({
+        type: 'action_trace',
+        mode: 'live',
+        reqUUID: stream.reqUUID,
+        messages: [action(10), action(20)]
+    });
+    assert.equal(f.client.hasBufferedData(stream), false);
+    const next = await f.client.streamActions(actionRequest);
+    assert.equal(
+        (
+            await f.send({
+                type: 'action_trace',
+                mode: 'live',
+                reqUUID: next.reqUUID,
+                messages: [action(21)]
+            })
+        ).status,
+        true
+    );
 });

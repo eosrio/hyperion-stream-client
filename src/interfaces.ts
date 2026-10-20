@@ -1,13 +1,12 @@
 export type MessageHandler<T = any> = (data: T) => void;
 
-
 export interface HyperionStreamEvent<T extends StreamResponseTypes> {
     type: string;
     reqUUID: string;
-    mode: "live" | "history";
+    mode: 'live' | 'history';
     message?: string | AllowSharedBufferSource;
-    messages?: (T)[];
-    error: Error;
+    messages?: T[];
+    error?: Error;
 }
 
 export interface SavedRequest<K extends keyof StreamTypeMap> {
@@ -33,7 +32,7 @@ export enum StreamClientEvents {
     CONNECT = 'connect',
     DRAIN = 'drain',
     LIBDATA = 'libData',
-    ERROR = 'error',
+    ERROR = 'error'
 }
 
 /**
@@ -48,6 +47,12 @@ export interface HyperionClientOptions {
     libMonitor?: boolean;
     /** Connection timeout in milliseconds (default: 5000) */
     connectionTimeout?: number;
+    /** Subscription acknowledgement deadline (default: 10000ms). */
+    requestTimeout?: number;
+    /** Per-stream iterator/cache and history-to-live queue bound (default: 1000). */
+    maxQueueSize?: number;
+    /** Shared bound while waiting for irreversibility (default: 10000). */
+    maxReversibleBufferSize?: number;
 }
 
 export interface StreamDeltasRequest {
@@ -87,22 +92,22 @@ export interface StreamActionsRequest {
 }
 
 export interface ActionContent {
-    "@timestamp": string;
+    '@timestamp': string;
     timestamp: string;
     global_sequence: number;
     account_ram_deltas: {
         delta: number;
         account: string;
-    }
+    }[];
     act: {
         authorization: {
             permission: string;
             actor: string;
-        }
+        }[];
         account: string;
         name: string;
         data: any;
-    }
+    };
     block_num: number;
     action_ordinal: number;
     creator_action_ordinal: number;
@@ -115,14 +120,14 @@ export interface ActionContent {
     notified: string;
     receipts: {
         receiver: string;
-    }[]
+    }[];
 
     // @ prefixed keys
     [key: string]: any;
 }
 
 export interface DeltaContent {
-    "@timestamp": string;
+    '@timestamp': string;
     timestamp: string;
     code: string;
     scope: string;
@@ -139,10 +144,10 @@ export interface DeltaContent {
 }
 
 export interface IncomingData<T extends StreamResponseTypes> {
-    uuid: string,
-    type: "action" | "delta";
-    mode: "live" | "history";
-    content: T
+    uuid: string;
+    type: 'action' | 'delta';
+    mode: 'live' | 'history';
+    content: T;
     irreversible: boolean;
 }
 
@@ -160,35 +165,32 @@ export interface ForkData {
 }
 
 export interface HyperionStreamEventMap<T extends StreamResponseTypes> {
-    [StreamClientEvents.CONNECT]: void;
-    [StreamClientEvents.DRAIN]: void;
-    [StreamClientEvents.EMPTY]: void;
-    [StreamClientEvents.DATA]: IncomingData<T>;
-    [StreamClientEvents.LIBDATA]: IncomingData<T>;
-    [StreamClientEvents.LIBUPDATE]: LIBUpdate;
-    [StreamClientEvents.FORK]: ForkData;
-    [StreamClientEvents.ERROR]: Error;
-    // String versions for convenience
-    'connect': void;
-    'drain': void;
-    'empty': void;
-    'data': IncomingData<T>;
-    'libData': IncomingData<T>;
-    'libUpdate': LIBUpdate;
-    'fork': ForkData;
-    'error': Error;
+    connect: void;
+    drain: void;
+    empty: void;
+    data: IncomingData<T>;
+    libData: IncomingData<T>;
+    libUpdate: LIBUpdate;
+    fork: ForkData;
+    error: Error;
 }
 
 export interface EventMap<T extends StreamResponseTypes> {
-    'start': { status: string, reqUUID: string, startingBlock: number };
-    'message': IncomingData<T>;
-    'error': any;
+    start: { status: string; reqUUID: string; startingBlock: number | string };
+    message: IncomingData<T>;
+    error: any;
+    historyEnd: void;
+    end: void;
     // Add other events as needed
 }
 
 // Generic typed event listener
-export type TypedEventListener<T extends StreamResponseTypes, K extends keyof HyperionStreamEventMap<T>> = (data: HyperionStreamEventMap<T>[K]) => void;
-export type EventData<T extends StreamResponseTypes> = IncomingData<T> | LIBUpdate | ForkData | Error | void | undefined;
+export type TypedEventListener<
+    T extends StreamResponseTypes,
+    K extends keyof HyperionStreamEventMap<T>
+> = (data: HyperionStreamEventMap<T>[K]) => void;
+export type EventData<T extends StreamResponseTypes> =
+    IncomingData<T> | LIBUpdate | ForkData | Error | void | undefined;
 export type EventListener<T extends StreamResponseTypes> = (data?: EventData<T>) => void;
 
 export type StreamTypeMap = {

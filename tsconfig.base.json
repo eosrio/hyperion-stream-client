@@ -2,8 +2,8 @@
   "compilerOptions": {
     "allowJs": true,
     "allowSyntheticDefaultImports": true,
-    "baseUrl": "src",
     "declaration": true,
+    "rootDir": "src",
     "esModuleInterop": true,
     "sourceMap": true,
     "lib": [

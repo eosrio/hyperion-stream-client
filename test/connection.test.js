@@ -1,115 +1,99 @@
-import {after, before, describe, it} from 'node:test';
-import {strict as assert} from 'node:assert';
-import {createTestClient, TEST_TIMEOUT, wait} from './setup.js';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { HyperionStreamClient } from '../lib/esm/index.js';
+import { fixture, until, actionRequest, action } from './setup.js';
 
-describe('HyperionStreamClient Connection Tests', async () => {
-    let client;
-
-    // Setup before tests
-    before(async () => {
-        client = await createTestClient();
-    });
-
-    // Cleanup after tests
-    after(() => {
-        if (client) {
-            console.log('Disconnecting client...');
-            client.disconnect();
-        }
-    });
-
-    await it('should connect to a Hyperion endpoint', {timeout: TEST_TIMEOUT}, async () => {
-        // Set up event listeners
-        let errorOccurred = false;
-        client.on('error', (error) => {
-            console.error('Connection error:', error);
+test('concurrent connect calls share a socket and await the chain handshake', async (t) => {
+    const f = await fixture(t);
+    await Promise.all([f.client.connect(), f.client.connect()]);
+    await f.client.connect();
+    assert.equal(f.sockets.length, 1);
+    assert.equal(f.client.chainId, 'test-chain');
+    assert.equal(f.client.online, true);
+});
+test('missing handshake rejects with an observable bounded error (#13)', async (t) => {
+    const f = await fixture(t, { noHandshake: true, client: { connectionTimeout: 60 } });
+    const errors = [];
+    f.client.on('error', (error) => errors.push(error));
+    await assert.rejects(f.client.connect(), /handshake timed out/);
+    assert.equal(f.client.online, false);
+    assert.equal(errors.length, 1);
+});
+test('disconnect cancels a pending connection', async (t) => {
+    const f = await fixture(t, { noHandshake: true });
+    const connecting = f.client.connect();
+    f.client.disconnect();
+    await assert.rejects(connecting, /cancelled/);
+});
+test('endpoint URL validation and /stream suffix normalization', async (t) => {
+    assert.throws(() => new HyperionStreamClient({ endpoint: '' }), /endpoint/);
+    assert.throws(() => new HyperionStreamClient({ endpoint: 'ftp://localhost' }), /protocol/);
+    const f = await fixture(t);
+    f.client.setEndpoint(`${f.endpoint}/stream/`);
+    await f.client.connect();
+    assert.throws(() => f.client.setEndpoint(f.endpoint), /Disconnect/);
+});
+test(
+    'reconnect replays the partially received block once, without mutating the caller',
+    { timeout: 10000 },
+    async (t) => {
+        const f = await fixture(t, { resend: true });
+        await f.client.connect();
+        const request = { ...actionRequest, start_from: 100, replayOnReconnect: true };
+        const stream = await f.client.streamActions(request);
+        await f.send({
+            type: 'action_trace',
+            mode: 'history',
+            reqUUID: stream.reqUUID,
+            messages: [action(120, 1)]
         });
-
-        // Connect to the endpoint
-        await client.connect();
-
-        // Verify connection
-        assert.ok(client.chainId, 'Chain ID should be available after connection');
-        assert.ok(!errorOccurred, 'No errors should occur during connection');
-
-        // Disconnect
-        client.disconnect();
-    });
-
-    await it('should handle connection errors gracefully', {timeout: TEST_TIMEOUT}, async () => {
-        // Create a client with an invalid endpoint
-        const invalidClient = createTestClient({endpoint: 'wss://invalid-endpoint.example'});
-
-        // Set up event listeners
-        let errorOccurred = false;
-        invalidClient.on('error', (error) => {
-            console.error('Connection error:', error.message);
-            errorOccurred = true;
+        f.sockets[0].conn.close();
+        await until(() => f.requests.length === 2);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        assert.equal(f.requests.length, 2);
+        assert.equal(f.requests[1].request.start_from, 120);
+        assert.equal(request.start_from, 100);
+        assert.equal(f.client.streamMapByUUID.size, 1);
+    }
+);
+test('relay restoration rebuilds subscriptions on the existing socket', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    await f.client.streamActions(actionRequest);
+    f.sockets[0].emit('status', 'relay_down');
+    f.sockets[0].emit('status', 'relay_restored');
+    await until(() => f.requests.length === 2);
+    assert.equal(f.sockets.length, 1);
+    assert.equal(f.client.streamMapByUUID.size, 1);
+});
+test(
+    'disconnect during setup rejects promptly and permits a new registration after reconnect',
+    { timeout: 10000 },
+    async (t) => {
+        let first = true;
+        const f = await fixture(t, {
+            request: ({ socket, ack, uuid }) => {
+                if (first) {
+                    first = false;
+                    socket.conn.close();
+                } else ack({ status: 'OK', reqUUID: uuid });
+            }
         });
-
-        try {
-            // Attempt to connect (should fail)
-            await invalidClient.connect();
-            assert.fail('Connection should have failed');
-        } catch (error) {
-            // Connection should fail
-            assert.ok(errorOccurred || error, 'Error should be emitted or thrown');
-        } finally {
-            // Cleanup
-            invalidClient.disconnect();
-        }
-    });
-
-    await it('should reconnect after disconnection', {timeout: TEST_TIMEOUT}, async () => {
-        // Connect to the endpoint
-        await client.connect();
-
-        // Verify initial connection
-        const initialChainId = client.chainId;
-        assert.ok(initialChainId, 'Chain ID should be available after initial connection');
-
-        // Disconnect
-        client.disconnect();
-
-        // Wait a moment
-        await wait(500);
-
-        // Reconnect
-        await client.connect();
-
-        // Verify reconnection
-        assert.equal(client.chainId, initialChainId, 'Chain ID should be the same after reconnection');
-
-        // Disconnect
-        client.disconnect();
-    });
-
-    await it('should timeout after specified connection timeout', {timeout: 10000}, async () => {
-        // Create a client with a non-responsive endpoint and a short timeout
-        const timeoutClient = createTestClient({
-            endpoint: 'wss://example.com:12345', // Non-responsive endpoint
-            connectionTimeout: 1000 // 1 second timeout
-        });
-
-        const startTime = Date.now();
-
-        try {
-            // Attempt to connect (should timeout)
-            await timeoutClient.connect();
-            assert.fail('Connection should have timed out');
-        } catch (error) {
-            // Connection should timeout
-            const elapsedTime = Date.now() - startTime;
-
-            // Verify that an error occurred
-            assert.ok(error, `A connection error should have been thrown`);
-
-            // Verify the timeout duration (with some tolerance)
-            assert.ok(elapsedTime >= 1000 && elapsedTime < 3000,
-                `Connection should timeout after ~1000ms, took ${elapsedTime}ms`);
-        } finally {
-            // Cleanup
-            timeoutClient.disconnect();
-        }
-    });
+        await f.client.connect();
+        await assert.rejects(f.client.streamActions(actionRequest), /interrupted by disconnect/);
+        await until(() => f.sockets.length === 2 && f.client.online);
+        const stream = await f.client.streamActions(actionRequest);
+        assert.equal(stream.started, true);
+    }
+);
+test('reconnect handshakes have their own deadline', { timeout: 10000 }, async (t) => {
+    const settings = { client: { connectionTimeout: 80 } };
+    const f = await fixture(t, settings);
+    const errors = [];
+    f.client.on('error', (error) => errors.push(error));
+    await f.client.connect();
+    settings.noHandshake = true;
+    f.sockets[0].conn.close();
+    await until(() => errors.some((error) => /Reconnect handshake timed out/.test(error.message)));
+    assert.equal(f.client.online, false);
 });

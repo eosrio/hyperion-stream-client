@@ -1,197 +1,139 @@
-import {describe, it, before, after} from 'node:test';
-import {strict as assert} from 'node:assert';
-import {createTestClient, createMockSocket, wait, TEST_TIMEOUT} from './setup.js';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { fixture, actionRequest, action, until } from './setup.js';
 
-describe('HyperionStreamClient Error Handling Tests', async () => {
-    let client;
-
-    // Setup before tests
-    before(async () => {
-        client = await createTestClient();
+test('a server which never acknowledges a request cannot hang the caller', async (t) => {
+    const f = await fixture(t, { request: () => {}, client: { requestTimeout: 40 } });
+    await f.client.connect();
+    await assert.rejects(f.client.streamActions(actionRequest), /request timed out/);
+    assert.equal(f.client.streams.length, 0);
+    assert.equal(f.client.streamMap.size, 0);
+});
+test('server rejection is an Error and removes failed registration', async (t) => {
+    const f = await fixture(t, {
+        request: ({ ack }) => ack({ status: 'ERROR', message: 'unsupported filter' })
     });
-
-    // Cleanup after tests
-    after(() => {
-        if (client) {
-            client.disconnect();
+    await f.client.connect();
+    await assert.rejects(f.client.streamActions(actionRequest), /unsupported filter/);
+    assert.equal(f.client.streams.length, 0);
+});
+test('server history failures reject waiting iterators instead of pretending to finish', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions({ ...actionRequest, start_from: 1 });
+    const iterator = stream[Symbol.asyncIterator]();
+    const rejected = assert.rejects(iterator.next(), /stream_scroll_limit/);
+    const ack = await f.send({
+        type: 'action_trace',
+        mode: 'history',
+        reqUUID: stream.reqUUID,
+        error: 'stream_scroll_limit',
+        messages: []
+    });
+    assert.equal(ack.status, false);
+    await rejected;
+});
+test('malformed binary records fail the subscription and NACK the packet', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions(actionRequest);
+    const ack = await f.send({
+        type: 'action_trace',
+        mode: 'live',
+        reqUUID: stream.reqUUID,
+        message: Buffer.from('{')
+    });
+    assert.equal(ack.status, false);
+    await assert.rejects(stream[Symbol.asyncIterator]().next(), SyntaxError);
+});
+test('slow active iterators fail explicitly on overflow without silently dropping data', async (t) => {
+    const f = await fixture(t, { client: { maxQueueSize: 2 } });
+    await f.client.connect();
+    const stream = await f.client.streamActions(actionRequest);
+    const iterator = stream[Symbol.asyncIterator]();
+    const ack = await f.send({
+        type: 'action_trace',
+        mode: 'live',
+        reqUUID: stream.reqUUID,
+        messages: [action(1), action(2), action(3)]
+    });
+    assert.equal(ack.status, false);
+    await assert.rejects(iterator.next(), /queue exceeded/);
+    assert.equal(f.client.streams.length, 0);
+});
+test('unobserved queues also fail on overflow before an iterator attaches', async (t) => {
+    const f = await fixture(t, { client: { maxQueueSize: 1 } });
+    await f.client.connect();
+    const stream = await f.client.streamActions(actionRequest);
+    assert.equal(
+        (
+            await f.send({
+                type: 'action_trace',
+                mode: 'live',
+                reqUUID: stream.reqUUID,
+                messages: [action(1), action(2)]
+            })
+        ).status,
+        false
+    );
+    await assert.rejects(stream[Symbol.asyncIterator]().next(), /queue exceeded/);
+});
+test('stop, iterator return, and disconnect wake pending reads and remove streams', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    for (const method of ['stop', 'return', 'disconnect']) {
+        const stream = await f.client.streamActions(actionRequest);
+        const iterator = stream[Symbol.asyncIterator]();
+        const reading = iterator.next();
+        if (method === 'stop') stream.stop();
+        else if (method === 'return') await iterator.return();
+        else f.client.disconnect();
+        assert.equal((await reading).done, true);
+        assert.equal(f.client.streams.length, 0);
+    }
+});
+test('queued offline streams can be stopped without UUIDs or a server', async (t) => {
+    const f = await fixture(t);
+    const stream = await f.client.streamActions(actionRequest);
+    stream.stop();
+    await f.client.connect();
+    assert.equal(f.requests.length, 0);
+    assert.equal(f.client.streamMap.size, 0);
+});
+test('late cancellation cannot remove a different stream', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const a = await f.client.streamActions(actionRequest);
+    const b = await f.client.streamActions({ ...actionRequest, account: 'bob' });
+    a.stop();
+    a.stop();
+    f.client.stop('unknown');
+    await until(() => f.cancellations.length === 1);
+    assert.deepEqual(f.client.streams, [b]);
+});
+test('successful ACKs after timeout are remotely cancelled', async (t) => {
+    let reply;
+    let uuid;
+    const f = await fixture(t, {
+        client: { requestTimeout: 40 },
+        request: (request) => {
+            reply = request.ack;
+            uuid = request.uuid;
         }
     });
-
-    await it('should handle invalid stream request parameters', {timeout: TEST_TIMEOUT}, async () => {
-        // Connect to the endpoint
-        await client.connect();
-
-        // Test with missing required parameters
-        try {
-            await client.streamActions({
-                // Missing contract and action
-                start_from: 0,
-            });
-            assert.fail('Should throw an error for missing required parameters');
-        } catch (error) {
-            assert.ok(error, 'Error should be thrown for missing required parameters');
-        }
-
-        // Test with invalid parameter types
-        try {
-            await client.streamActions({
-                contract: 123, // Should be a string
-                action: 'transfer',
-                start_from: 0,
-            });
-            assert.fail('Should throw an error for invalid parameter types');
-        } catch (error) {
-            assert.ok(error, 'Error should be thrown for invalid parameter types');
-        }
-
-        // Disconnect
-        client.disconnect();
+    await f.client.connect();
+    await assert.rejects(f.client.streamActions(actionRequest), /timed out/);
+    reply({ status: 'OK', reqUUID: uuid });
+    await until(() => f.cancellations.includes(uuid));
+});
+test('untracked historical packets are NACKed to stop abandoned scrolls', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const ack = await f.send({
+        type: 'action_trace',
+        mode: 'history',
+        reqUUID: 'unknown',
+        messages: [action(1)]
     });
-
-    await it('should handle network disconnection gracefully', {timeout: TEST_TIMEOUT}, async () => {
-        // Connect to the endpoint
-        await client.connect();
-
-        // Set up event listeners
-        let disconnectEventFired = false;
-        client.on('disconnect', () => {
-            disconnectEventFired = true;
-        });
-
-        // Simulate a network disconnection by manually calling the socket's disconnect event handler
-        // Note: This is a bit of a hack, but it's challenging to simulate a real network disconnection in a test
-        if (client.socket && client.socket.listeners) {
-            const disconnectHandlers = client.socket.listeners('disconnect');
-            if (disconnectHandlers && disconnectHandlers.length > 0) {
-                disconnectHandlers.forEach(handler => handler());
-            }
-        }
-
-        // Wait a moment for the event to be processed
-        await wait(500);
-
-        // Verify that the disconnect event was handled
-        assert.ok(disconnectEventFired, 'Disconnect event should be fired');
-
-        // Disconnect
-        client.disconnect();
-    });
-
-    await it('should handle server errors gracefully', {timeout: TEST_TIMEOUT}, async () => {
-        // Connect to the endpoint
-        await client.connect();
-
-        // Set up event listeners
-        let errorEventFired = false;
-        client.on('error', () => {
-            errorEventFired = true;
-        });
-
-        // Simulate a server error by manually calling the socket's error event handler
-        if (client.socket && client.socket.listeners) {
-            const errorHandlers = client.socket.listeners('error');
-            if (errorHandlers && errorHandlers.length > 0) {
-                errorHandlers.forEach(handler => handler(new Error('Simulated server error')));
-            }
-        }
-
-        // Wait a moment for the event to be processed
-        await wait(500);
-
-        // Verify that the error event was handled
-        assert.ok(errorEventFired, 'Error event should be fired');
-
-        // Disconnect
-        client.disconnect();
-    });
-
-    await it('should handle stream cancellation', {timeout: TEST_TIMEOUT}, async () => {
-        // Connect to the endpoint
-        await client.connect();
-
-        // Create a stream
-        const stream = await client.streamActions({
-            contract: 'eosio',
-            action: 'transfer',
-            start_from: 0,
-        });
-
-        // Verify that the stream is created
-        assert.ok(stream, 'Stream should be created');
-
-        // Stop the stream
-        stream.stop();
-
-        // Wait a moment for the cancellation to be processed
-        await wait(500);
-
-        // Attempt to use the stream after it's stopped
-        let errorOccurred = false;
-        try {
-            // This should fail because the stream is stopped
-            for await (const action of stream) {
-                // This should not execute
-                assert.fail('Stream should not produce any actions after being stopped');
-            }
-        } catch (error) {
-            errorOccurred = true;
-        }
-
-        // Verify that an error occurred
-        assert.ok(errorOccurred, 'Error should occur when using a stopped stream');
-
-        // Disconnect
-        client.disconnect();
-    });
-
-    await it('should handle multiple simultaneous streams', {timeout: TEST_TIMEOUT}, async () => {
-        // Connect to the endpoint
-        await client.connect();
-
-        // Create multiple streams
-        const stream1 = await client.streamActions({
-            contract: 'eosio.token',
-            action: 'transfer',
-            start_from: -100,
-        });
-
-        const stream2 = await client.streamActions({
-            contract: 'eosio',
-            action: 'onblock',
-            start_from: -100,
-        });
-
-        // Verify that both streams are created
-        assert.ok(stream1, 'Stream 1 should be created');
-        assert.ok(stream2, 'Stream 2 should be created');
-
-        // Set up event listeners for both streams
-        let stream1MessageReceived = false;
-        let stream2MessageReceived = false;
-
-        stream1.on('message', () => {
-            stream1MessageReceived = true;
-        });
-
-        stream2.on('message', () => {
-            stream2MessageReceived = true;
-        });
-
-        // Wait for messages or timeout
-        const startTime = Date.now();
-        while ((!stream1MessageReceived || !stream2MessageReceived) &&
-        Date.now() - startTime < TEST_TIMEOUT - 1000) {
-            await wait(100);
-        }
-
-        // Stop both streams
-        stream1.stop();
-        stream2.stop();
-
-        // Disconnect
-        client.disconnect();
-
-        // Note: We don't assert stream1MessageReceived or stream2MessageReceived because they depend on
-        // the actual data in the blockchain and might not be available in the test environment
-    });
+    assert.equal(ack.status, false);
 });
