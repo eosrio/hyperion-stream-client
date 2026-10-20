@@ -1,6 +1,11 @@
 import { createServer } from 'node:http';
 import { Server } from 'socket.io';
-import { HyperionStreamClient } from '../lib/esm/index.js';
+import { createRequire } from 'node:module';
+const { HyperionStreamClient } =
+    process.env.HYPERION_TEST_FORMAT === 'cjs'
+        ? createRequire(import.meta.url)('../lib/cjs/index.js')
+        : await import('../lib/esm/index.js');
+export { HyperionStreamClient };
 
 export const actionRequest = { contract: 'eosio.token', action: 'transfer' };
 export const action = (block, sequence = block) => ({

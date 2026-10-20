@@ -14,7 +14,7 @@ import type {
     TypedEventListener
 } from './interfaces.js';
 import { HyperionStream } from './hyperion-stream.js';
-import { toStreamError } from './functions.js';
+import { invokeObserver, toStreamError } from './functions.js';
 
 export class HyperionStreamClient {
     private socket?: Socket;
@@ -41,11 +41,11 @@ export class HyperionStreamClient {
     constructor(options: HyperionClientOptions) {
         if (!options || typeof options !== 'object') throw new TypeError('Invalid options');
         this.options = {
-            connectionTimeout: 5000,
-            requestTimeout: 10000,
-            maxQueueSize: 1000,
-            maxReversibleBufferSize: 10000,
-            ...options
+            ...options,
+            connectionTimeout: options.connectionTimeout ?? 5000,
+            requestTimeout: options.requestTimeout ?? 10000,
+            maxQueueSize: options.maxQueueSize ?? 1000,
+            maxReversibleBufferSize: options.maxReversibleBufferSize ?? 10000
         };
         for (const key of [
             'connectionTimeout',
@@ -104,17 +104,21 @@ export class HyperionStreamClient {
         });
         this.socket = socket;
         let handshakeReceived = false;
-        this.connectionPromise = new Promise((resolve, reject) => {
+        const attempt = new Promise<void>((resolve, reject) => {
             let settled = false;
             const finish = (error?: Error) => {
                 if (settled) return;
                 settled = true;
                 clearTimeout(timer);
-                this.abortConnect = undefined;
+                if (this.socket === socket) this.abortConnect = undefined;
                 if (error) {
                     socket.removeAllListeners();
                     socket.disconnect();
-                    this.online = false;
+                    if (this.socket === socket) {
+                        this.socket = undefined;
+                        this.online = false;
+                        this.connectionPromise = undefined;
+                    }
                     this.reportError(error);
                     reject(error);
                 } else resolve();
@@ -179,7 +183,7 @@ export class HyperionStreamClient {
                 this.clearLibTimer();
                 this.debugLog('Disconnected:', reason);
                 clearTimeout(this.handshakeTimeout);
-                for (const stream of this.streams) stream.handleDisconnect();
+                this.suspendStreams();
             });
             socket.on('resend_requests', () => {
                 void this.resendRequests();
@@ -188,7 +192,11 @@ export class HyperionStreamClient {
             socket.on('lib_update', (message) => this.handleLibUpdate(message));
             socket.on('fork_event', (message) => this.handleForkEvent(message));
             socket.on('status', (status) => {
-                if (status === 'relay_down') this.online = false;
+                if (status === 'relay_down') {
+                    this.online = false;
+                    this.clearLibTimer();
+                    this.suspendStreams();
+                }
                 if (status === 'relay_restored') {
                     this.online = true;
                     void this.resendRequests(true);
@@ -196,10 +204,11 @@ export class HyperionStreamClient {
             });
             socket.connect();
         });
+        this.connectionPromise = attempt;
         try {
-            await this.connectionPromise;
+            await attempt;
         } finally {
-            this.connectionPromise = undefined;
+            if (this.connectionPromise === attempt) this.connectionPromise = undefined;
         }
     }
     private handleConnect(): void {
@@ -211,12 +220,36 @@ export class HyperionStreamClient {
         this.emit('connect');
         void this.resendRequests(false, true);
     }
+    private suspendStreams(): void {
+        const pending = this.reversibleBuffer;
+        this.reversibleBuffer = [];
+        const earliest = new Map<HyperionStream<any>, number>();
+        for (const { stream, message } of pending)
+            earliest.set(
+                stream,
+                Math.min(earliest.get(stream) ?? Infinity, message.content.block_num)
+            );
+        for (const stream of [...this.streams]) {
+            if (stream.request.replayOnReconnect) this.streamMapByUUID.delete(stream.reqUUID);
+            const pendingBlock = earliest.get(stream);
+            stream.handleDisconnect(pendingBlock);
+            if (pendingBlock !== undefined && !stream.request.replayOnReconnect) {
+                const error = Object.assign(
+                    new Error('Unconfirmed stream data requires replay after disconnect'),
+                    { retryable: true, code: 'STREAM_REPLAY_REQUIRED' }
+                );
+                stream.fail(error);
+                this.reportError(error);
+            }
+        }
+    }
     disconnect(): void {
-        this.abortConnect?.(new Error('Connection cancelled'));
+        const socket = this.socket;
+        const abortConnect = this.abortConnect;
+        const streams = [...this.streams];
+        this.abortConnect = undefined;
+        this.connectionPromise = undefined;
         clearTimeout(this.handshakeTimeout);
-        this.socket?.removeAllListeners();
-        for (const stream of [...this.streams]) stream.stop();
-        this.socket?.disconnect();
         this.socket = undefined;
         this.online = false;
         this.lastConnectedId = undefined;
@@ -227,6 +260,10 @@ export class HyperionStreamClient {
         this.libOffsetArray = [];
         this.reversibleBuffer = [];
         this.clearLibTimer();
+        socket?.removeAllListeners();
+        socket?.disconnect();
+        for (const stream of streams) stream.stop();
+        abortConnect?.(new Error('Connection cancelled'));
     }
     async resendRequests(force = false, onConnect = false): Promise<void> {
         const socket = this.socket;
@@ -409,7 +446,7 @@ export class HyperionStreamClient {
     private handleLibUpdate(message: LIBUpdate): void {
         if (
             !Number.isSafeInteger(message?.block_num) ||
-            message.block_num < this.lastIrreversibleBlock
+            message.block_num <= this.lastIrreversibleBlock
         )
             return;
         if (message.chain_id && message.chain_id !== this.chainId) {
@@ -435,19 +472,15 @@ export class HyperionStreamClient {
             if (this.libTimestamp) this.libOffsetArray.push(Date.now() - this.libTimestamp);
             this.libOffsetArray = this.libOffsetArray.slice(-10);
             this.libTimestamp = Date.now();
-            if (this.libOffsetArray.length > 1) {
-                const delay =
-                    this.libOffsetArray.reduce((sum, value) => sum + value, 0) /
-                        this.libOffsetArray.length +
-                    5000;
-                this.libMonitoringTimeout = setTimeout(
-                    () =>
-                        this.reportError(
-                            new Error(`Last irreversible block stalled for ${delay}ms`)
-                        ),
-                    delay
-                );
-            }
+            const delay = this.libOffsetArray.length
+                ? this.libOffsetArray.reduce((sum, value) => sum + value, 0) /
+                      this.libOffsetArray.length +
+                  5000
+                : 5000;
+            this.libMonitoringTimeout = setTimeout(
+                () => this.reportError(new Error(`Last irreversible block stalled for ${delay}ms`)),
+                delay
+            );
         }
         this.emit('libUpdate', message);
     }
@@ -482,11 +515,9 @@ export class HyperionStreamClient {
         const temporary = [...(this.onceListeners.get(event) ?? [])];
         this.onceListeners.delete(event);
         for (const listener of [...(this.listeners.get(event) ?? []), ...temporary]) {
-            try {
-                listener(data);
-            } catch (error) {
+            invokeObserver(listener, data, (error) => {
                 if (event !== 'error') this.reportError(error);
-            }
+            });
         }
     }
     on<K extends keyof HyperionStreamEventMap<StreamResponseTypes>>(

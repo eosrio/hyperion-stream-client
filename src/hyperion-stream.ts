@@ -9,11 +9,12 @@ import type {
     StreamTypes
 } from './interfaces.js';
 import type { HyperionStreamClient } from './hyperion-stream-client.js';
-import { replaceMetaFields, toStreamError } from './functions.js';
+import { invokeObserver, replaceMetaFields, toStreamError } from './functions.js';
 
 /** Owns a subscription's ordering, bounded queues, and consumer lifecycle. */
 export class HyperionStream<T extends StreamResponseTypes> {
     private handlers = new Map<string, Set<MessageHandler<any>>>();
+    private onceOriginals = new WeakMap<MessageHandler<any>, MessageHandler<any>>();
     private messages: IncomingData<T>[] = [];
     private liveMessages: IncomingData<T>[] = [];
     private waiting?: {
@@ -23,11 +24,15 @@ export class HyperionStream<T extends StreamResponseTypes> {
     private iteratorActive = false;
     private messageListenerAttached = false;
     private ended = false;
+    private cancelled = false;
     private failure?: Error;
     private historyComplete = false;
     private startPromise?: Promise<any>;
     private abortStart?: (error: Error) => void;
     private startedSocketId?: string;
+    private activeStart: number | string = 0;
+    private recoveryStart?: number | string;
+    private generationBlock = 0;
     private maxQueueSize: number;
     readonly request: StreamRequestTypes;
     readonly type: StreamTypes;
@@ -75,8 +80,12 @@ export class HyperionStream<T extends StreamResponseTypes> {
             return { status: 'OK', reqUUID: this.reqUUID };
         const request = structuredClone(this.request);
         // A block may contain many records: +1 skips the rest of a partially received block.
-        if (this.started && request.replayOnReconnect && this.lastReceivedBlockNum > 0)
-            request.start_from = this.lastReceivedBlockNum;
+        if (this.started && request.replayOnReconnect) {
+            const resumeFrom = this.recoveryStart ?? (this.lastReceivedBlockNum || undefined);
+            if (resumeFrom !== undefined) request.start_from = resumeFrom;
+        }
+        this.activeStart = request.start_from ?? 0;
+        this.generationBlock = 0;
         this.live = !request.start_from;
         this.historyComplete = false;
         this.liveMessages = [];
@@ -118,6 +127,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
                 this.clientRef.registerStream(this, response.reqUUID);
                 this.started = true;
                 this.startedSocketId = socket.id;
+                this.recoveryStart = undefined;
                 const result = { ...response, startingBlock: request.start_from ?? 0 };
                 finish(undefined, result);
                 this.emit('start', result);
@@ -132,13 +142,42 @@ export class HyperionStream<T extends StreamResponseTypes> {
     }
 
     stop(): void {
+        this.cancelled = true;
+        this.messages = [];
         this.finish();
     }
     fail(error: Error): void {
         this.finish(error);
     }
-    handleDisconnect(): void {
+    handleDisconnect(pendingBlock?: number): void {
         this.startedSocketId = undefined;
+        if (this.request.replayOnReconnect) {
+            const eventConsumer =
+                this.handlers.get('message')?.size ||
+                this.clientRef.hasDataListeners('data') ||
+                this.clientRef.hasDataListeners('libData');
+            const unread =
+                this.iteratorActive || !eventConsumer
+                    ? this.messages
+                          .filter((message) => !message.irreversible)
+                          .map((message) => message.content.block_num)
+                    : [];
+            const pending = [
+                ...unread,
+                ...this.liveMessages.map((message) => message.content.block_num)
+            ];
+            if (pendingBlock !== undefined) pending.push(pendingBlock);
+            if (this.generationBlock > 0) pending.push(this.generationBlock);
+            // Keep the original history range until the first record is delivered. For a
+            // live-only request, recover from the earliest accepted but unconfirmed record.
+            const earliest = pending.reduce((minimum, block) => Math.min(minimum, block), Infinity);
+            this.recoveryStart ??=
+                this.generationBlock > 0
+                    ? earliest
+                    : this.activeStart || (pending.length ? earliest : undefined);
+            this.messages = this.messages.filter((message) => message.irreversible);
+            this.liveMessages = [];
+        }
         const error = new Error('Stream request interrupted by disconnect');
         error.name = 'StreamDisconnectedError';
         this.abortStart?.(error);
@@ -167,36 +206,42 @@ export class HyperionStream<T extends StreamResponseTypes> {
         if (!this.handlers.has(event)) this.handlers.set(event, new Set());
         this.handlers.get(event)!.add(handler);
         if ((event === 'end' && this.ended) || (event === 'historyEnd' && this.historyComplete)) {
-            try {
-                handler(undefined as EventMap<T>[K]);
-            } catch (error) {
-                this.clientRef.reportError(error);
-            }
+            invokeObserver(handler, undefined as EventMap<T>[K], (error) =>
+                this.clientRef.reportError(error)
+            );
         }
         if (event === 'error' && this.failure) {
-            try {
-                handler(this.failure as EventMap<T>[K]);
-            } catch (error) {
-                this.clientRef.reportError(error);
-            }
+            invokeObserver(handler, this.failure as EventMap<T>[K], (error) =>
+                this.clientRef.reportError(error)
+            );
         }
         // The server can deliver an entire batch in the setup ACK's transport frame.
         if (event === 'message' && !this.messageListenerAttached) {
             this.messageListenerAttached = true;
-            if (!this.failure)
-                for (const message of [...this.messages]) this.emit('message', message);
+            if (!this.failure) {
+                for (const message of [...this.messages]) {
+                    if (this.cancelled || this.failure) break;
+                    this.emit('message', message);
+                }
+            }
         }
         return this;
     }
     off<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>): this {
-        this.handlers.get(event)?.delete(handler);
+        const handlers = this.handlers.get(event);
+        for (const registered of handlers ?? []) {
+            if (registered === handler || this.onceOriginals.get(registered) === handler)
+                handlers?.delete(registered);
+        }
         return this;
     }
     once<K extends keyof EventMap<T>>(event: K, handler: MessageHandler<EventMap<T>[K]>): this {
+        if (typeof handler !== 'function') throw new TypeError('Event listener must be a function');
         const onceHandler = (data: EventMap<T>[K]) => {
-            this.off(event, onceHandler);
-            handler(data);
+            this.handlers.get(event)?.delete(onceHandler);
+            return handler(data);
         };
+        this.onceOriginals.set(onceHandler, handler);
         return this.on(event, onceHandler);
     }
     setMaxQueueSize(size: number): this {
@@ -207,11 +252,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
     }
     private emit<K extends keyof EventMap<T>>(event: K, data: EventMap<T>[K]): void {
         for (const handler of [...(this.handlers.get(event) ?? [])]) {
-            try {
-                handler(data);
-            } catch (error) {
-                this.clientRef.reportError(error);
-            }
+            invokeObserver(handler, data, (error) => this.clientRef.reportError(error));
         }
     }
 
@@ -228,6 +269,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
             throw new Error(`Stream iterator queue exceeded ${this.maxQueueSize} messages`);
         this.firstReceivedBlock ||= message.content.block_num;
         this.lastReceivedBlockNum = Math.max(this.lastReceivedBlockNum, message.content.block_num);
+        this.generationBlock = Math.max(this.generationBlock, message.content.block_num);
         this.clientRef.lastReceivedBlockNum = Math.max(
             this.clientRef.lastReceivedBlockNum,
             this.lastReceivedBlockNum
@@ -319,6 +361,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
             (message) => message.content.block_num < startingBlock
         );
         this.lastReceivedBlockNum = Math.min(this.lastReceivedBlockNum, startingBlock - 1);
+        this.generationBlock = Math.min(this.generationBlock, startingBlock - 1);
     }
 
     [Symbol.asyncIterator](): AsyncIterableIterator<IncomingData<T>> {

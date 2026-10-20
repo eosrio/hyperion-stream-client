@@ -1,5 +1,18 @@
 import type { ActionContent, DeltaContent, StreamError, StreamErrorDetails } from './interfaces.js';
 
+/** Observers do not delay transport ACKs, but rejected promises still need an owner. */
+export function invokeObserver<T>(
+    listener: (value: T) => unknown,
+    value: T,
+    onError: (error: unknown) => void
+): void {
+    try {
+        Promise.resolve(listener(value)).catch(onError);
+    } catch (error) {
+        onError(error);
+    }
+}
+
 /** Keep retryability and status metadata supplied by the server. */
 export function toStreamError(value: unknown): StreamError {
     if (value instanceof Error) return value;

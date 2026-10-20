@@ -26,11 +26,18 @@ its independent version; this change does not publish a release.
 - `replayOnReconnect: true` replays the last delivered block inclusively. Deduplicate records
   in application storage. Forks still require application rollback for data already delivered
   before LIB. No durable application acknowledgement or exactly-once promise is provided.
+  Unread/unconfirmed records can move the replay boundary earlier. Repeated disconnects
+  preserve that boundary until replacement data arrives; stale UUID packets are discarded.
+- Transport loss or relay outage discards unconfirmed LIB buffers. If replay is disabled and
+  the stream holds such data, it fails with retryable `STREAM_REPLAY_REQUIRED` rather than
+  risking confirmation of a stale fork. Enable replay for continuous LIB subscriptions.
 - Explicit `disconnect()` ends subscriptions and iterators. Automatic transport reconnect
   preserves established subscriptions. A setup interrupted by disconnect rejects promptly;
   callers can retry after the next connection.
 - Subscribe to `error` and catch iterator failures. Queue overflow, rejected/malformed packets,
   and server historical errors are observable failures rather than silent truncation or hangs.
+  Rejected observer promises also reach the client error event, without delaying packet ACKs.
+  Explicit stop discards queued records; natural history completion still allows draining them.
 
 ESM imports and CommonJS `require()` use conditional exports with matching declarations.
 Use the UMD bundle only as a script/global constructor; browser import maps must map the

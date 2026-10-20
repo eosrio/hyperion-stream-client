@@ -2,13 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
-import { fixture } from './setup.js';
+import { fixture, until, action } from './setup.js';
 
 for (const format of ['esm', 'umd'])
-    test(
-        `Chromium ${format}: imports, handshake, request, history and completion`,
-        { timeout: 20000 },
-        async (t) => {
+    for (const scenario of ['history', 'errors', 'binary'])
+        test(`Chromium ${format}: ${scenario}`, { timeout: 20000 }, async (t) => {
             const browser = await chromium.launch({ headless: true, timeout: 10000 });
             // Close browser connections before waiting for the HTTP/Socket.IO fixture to close.
             t.after(() => browser.close());
@@ -25,9 +23,33 @@ for (const format of ['esm', 'umd'])
                     try {
                         const client = new HyperionStreamClient({endpoint:location.origin});
                         await client.connect();
+                        ${
+                            scenario === 'history'
+                                ? `
                         const stream = await client.streamActions({contract:'eosio.token',action:'transfer',start_from:1,ignore_live:true});
                         const blocks=[]; for await(const message of stream) blocks.push(message.content.block_num);
                         window.result={chain:client.chainId,blocks}; client.disconnect();
+                        `
+                                : scenario === 'errors'
+                                  ? `
+                        let failure;
+                        try {await client.streamActions({contract:'reject',action:'transfer'});} catch(error) {failure=error;}
+                        if(!failure) throw new Error('Expected setup rejection');
+                        const stream=await client.streamActions({contract:'eosio.token',action:'transfer'});
+                        let malformed=false;
+                        try {await stream[Symbol.asyncIterator]().next();} catch(error) {malformed=error instanceof SyntaxError;}
+                        window.result={status:failure.statusCode,retryable:failure.retryable,code:failure.code,malformed};
+                        client.disconnect();
+                        `
+                                  : `
+                        const stream=await client.streamActions({contract:'eosio.token',action:'transfer'});
+                        const iterator=stream[Symbol.asyncIterator]();
+                        const {value}=await iterator.next();
+                        const {done}=await iterator.return();
+                        window.result={sequence:value.content.global_sequence,block:value.content.block_num,done};
+                        client.disconnect();
+                        `
+                        }
                     } catch(error) {window.failure=String(error);}
                 </script>`);
                         return;
@@ -47,8 +69,31 @@ for (const format of ['esm', 'umd'])
                     response.setHeader('content-type', 'application/javascript');
                     response.end(readFileSync(path));
                 },
-                request({ socket, ack, uuid }) {
+                request({ socket, ack, uuid, request }) {
+                    if (scenario === 'errors' && request.contract === 'reject') {
+                        ack({
+                            status: 'ERROR',
+                            message: 'Projection unavailable',
+                            statusCode: 503,
+                            retryable: true,
+                            code: 'PROJECTION_UNAVAILABLE'
+                        });
+                        return;
+                    }
                     ack({ status: 'OK', reqUUID: uuid });
+                    if (scenario !== 'history') {
+                        socket.emit('message', {
+                            type: 'action_trace',
+                            mode: 'live',
+                            reqUUID: uuid,
+                            message: Buffer.from(
+                                scenario === 'errors'
+                                    ? '{'
+                                    : JSON.stringify(action(42, '18446744073709551615'))
+                            )
+                        });
+                        return;
+                    }
                     socket.emit('message', {
                         type: 'action_trace',
                         mode: 'history',
@@ -75,7 +120,19 @@ for (const format of ['esm', 'umd'])
                 failure: window.failure
             }));
             assert.equal(result.failure, undefined);
-            assert.deepEqual(result.result, { chain: 'test-chain', blocks: [42] });
+            assert.deepEqual(
+                result.result,
+                scenario === 'history'
+                    ? { chain: 'test-chain', blocks: [42] }
+                    : scenario === 'errors'
+                      ? {
+                            status: 503,
+                            retryable: true,
+                            code: 'PROJECTION_UNAVAILABLE',
+                            malformed: true
+                        }
+                      : { sequence: '18446744073709551615', block: 42, done: true }
+            );
+            if (scenario === 'binary') await until(() => f.cancellations.length === 1);
             assert.deepEqual(errors, []);
-        }
-    );
+        });

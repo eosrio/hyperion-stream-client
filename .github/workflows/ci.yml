@@ -28,6 +28,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:cjs
       - run: npm run test:package
       - if: matrix.os == 'ubuntu-latest' && matrix.node == 24
         run: npx playwright install --with-deps chromium

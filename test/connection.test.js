@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HyperionStreamClient } from '../lib/esm/index.js';
-import { fixture, until, actionRequest, action } from './setup.js';
+import { HyperionStreamClient, fixture, until, actionRequest, action } from './setup.js';
 
 test('concurrent connect calls share a socket and await the chain handshake', async (t) => {
     const f = await fixture(t);
