@@ -83,6 +83,12 @@ must tolerate duplicates. There is no durable consumer checkpoint or exactly-onc
 Handle `client.on('fork', ...)` when applying reversible data. LIB mode buffers records
 until confirmation and removes buffered forked records.
 
+Hyperion 4.5 represents global, receiver, and authorization uint64 sequences as canonical
+decimal strings. The client preserves those strings through history, binary live packets,
+metadata, and LIB buffers. Store them as strings or use `BigInt` for arithmetic; converting
+them to `Number` can lose identity. The public action types describe this 4.5 contract;
+older servers with numeric sequences require explicit application migration.
+
 ## Options and events
 
 | Client option | Default | Purpose |
@@ -109,6 +115,8 @@ Completion and failure state remain observable when listeners attach after setup
 Both support `on`, `off`, and `once`. For a `start` listener, create the stream before
 connecting, attach the listener, then call `connect()`. Stream failures reject iterator reads;
 setup failures reject `streamActions`/`streamDeltas` promises. Cancellation completes reads.
+Server error `statusCode`, `retryable`, and `code` fields are retained on the emitted/rejected
+error when supplied, so applications can distinguish retryable projection unavailability.
 
 ## Browsers
 

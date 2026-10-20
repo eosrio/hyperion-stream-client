@@ -14,6 +14,7 @@ import type {
     TypedEventListener
 } from './interfaces.js';
 import { HyperionStream } from './hyperion-stream.js';
+import { toStreamError } from './functions.js';
 
 export class HyperionStreamClient {
     private socket?: Socket;
@@ -257,6 +258,7 @@ export class HyperionStreamClient {
             if (stream) tracked = true;
             if (stream && !stream.handleIncomingMessage(message)) accepted = false;
         }
+        if (!tracked && message.error) this.reportError(toStreamError(message.error));
         ack?.({ status: accepted && (tracked || message.mode !== 'history') });
     }
     registerStream(stream: HyperionStream<any>, reqUUID: string): void {
@@ -469,7 +471,7 @@ export class HyperionStreamClient {
         return Boolean(this.listeners.get(event)?.size || this.onceListeners.get(event)?.size);
     }
     reportError(error: unknown): Error {
-        const failure = error instanceof Error ? error : new Error(String(error));
+        const failure = toStreamError(error);
         this.emit('error', failure);
         return failure;
     }

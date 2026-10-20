@@ -2,6 +2,63 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, actionRequest, action, until } from './setup.js';
 
+test('4.5 setup failures retain retryability, HTTP status and failure code', async (t) => {
+    const f = await fixture(t, {
+        request: ({ ack }) =>
+            ack({
+                status: 'ERROR',
+                message: 'Projection unavailable',
+                statusCode: 503,
+                retryable: true,
+                code: 'PROJECTION_UNAVAILABLE'
+            })
+    });
+    await f.client.connect();
+    await assert.rejects(f.client.streamActions(actionRequest), (error) => {
+        assert.equal(error.message, 'Projection unavailable');
+        assert.equal(error.statusCode, 503);
+        assert.equal(error.retryable, true);
+        assert.equal(error.code, 'PROJECTION_UNAVAILABLE');
+        return true;
+    });
+});
+test('4.5 live projection errors retain retryability on iterator and client errors', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions(actionRequest);
+    const errors = [];
+    f.client.on('error', (error) => errors.push(error));
+    const rejected = assert.rejects(
+        stream[Symbol.asyncIterator]().next(),
+        (error) =>
+            error.retryable === true &&
+            error.statusCode === 503 &&
+            error.message === 'Projection incomplete'
+    );
+    await f.send({
+        type: 'action_trace',
+        mode: 'live',
+        targets: [stream.reqUUID],
+        error: { message: 'Projection incomplete', statusCode: 503, retryable: true }
+    });
+    await rejected;
+    assert.equal(errors[0].retryable, true);
+    assert.equal(errors[0].message, 'Projection incomplete');
+});
+test('unscoped server failures are observable at the client', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const errors = [];
+    f.client.on('error', (error) => errors.push(error));
+    await f.send({
+        type: 'action_trace',
+        mode: 'history',
+        error: { message: 'Request scope missing', retryable: true }
+    });
+    assert.equal(errors[0].message, 'Request scope missing');
+    assert.equal(errors[0].retryable, true);
+});
+
 test('a server which never acknowledges a request cannot hang the caller', async (t) => {
     const f = await fixture(t, { request: () => {}, client: { requestTimeout: 40 } });
     await f.client.connect();

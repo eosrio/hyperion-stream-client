@@ -50,9 +50,11 @@ client.on('libUpdate', info => { const block: number = info.block_num; void bloc
 client.on(StreamClientEvents.DATA, message => { const block: number = message.content.block_num; void block; });
 void client.streamActions({contract: 'eosio.token', action: 'transfer'}).then(stream => {
     stream.on('message', message => {
+        const sequence: string = message.content.global_sequence;
         const actors: string[] = message.content.act.authorization.map(auth => auth.actor);
         const changes: number[] = message.content.account_ram_deltas.map(change => change.delta);
-        void actors; void changes;
+        const receivers: (string | undefined)[] = message.content.receipts.map(receipt => receipt.recv_sequence);
+        void actors; void changes; void sequence; void receivers;
     });
 });\n`;
     for (const extension of ['mts', 'cts'])

@@ -1,12 +1,21 @@
 export type MessageHandler<T = any> = (data: T) => void;
 
+export interface StreamErrorDetails {
+    message?: string;
+    statusCode?: number;
+    retryable?: boolean;
+    code?: string;
+}
+
+export type StreamError = Error & StreamErrorDetails;
+
 export interface HyperionStreamEvent<T extends StreamResponseTypes> {
     type: string;
     reqUUID: string;
     mode: 'live' | 'history';
     message?: string | AllowSharedBufferSource;
     messages?: T[];
-    error?: Error;
+    error?: Error | string | StreamErrorDetails;
 }
 
 export interface SavedRequest<K extends keyof StreamTypeMap> {
@@ -91,10 +100,18 @@ export interface StreamActionsRequest {
     replayOnReconnect?: boolean;
 }
 
+export interface ActionReceipt {
+    receiver: string;
+    global_sequence?: string;
+    recv_sequence?: string;
+    auth_sequence?: { account?: string; sequence: string }[];
+}
+
 export interface ActionContent {
     '@timestamp': string;
     timestamp: string;
-    global_sequence: number;
+    /** Hyperion 4.5 uint64 metadata uses canonical decimal strings. */
+    global_sequence: string;
     account_ram_deltas: {
         delta: number;
         account: string;
@@ -118,9 +135,8 @@ export interface ActionContent {
     trx_id: string;
     producer: string;
     notified: string;
-    receipts: {
-        receiver: string;
-    }[];
+    receipts: ActionReceipt[];
+    receipt?: ActionReceipt | [string, ActionReceipt];
 
     // @ prefixed keys
     [key: string]: any;
@@ -172,13 +188,13 @@ export interface HyperionStreamEventMap<T extends StreamResponseTypes> {
     libData: IncomingData<T>;
     libUpdate: LIBUpdate;
     fork: ForkData;
-    error: Error;
+    error: StreamError;
 }
 
 export interface EventMap<T extends StreamResponseTypes> {
     start: { status: string; reqUUID: string; startingBlock: number | string };
     message: IncomingData<T>;
-    error: any;
+    error: StreamError;
     historyEnd: void;
     end: void;
     // Add other events as needed

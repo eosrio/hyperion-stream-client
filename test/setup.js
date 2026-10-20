@@ -5,7 +5,7 @@ import { HyperionStreamClient } from '../lib/esm/index.js';
 export const actionRequest = { contract: 'eosio.token', action: 'transfer' };
 export const action = (block, sequence = block) => ({
     block_num: block,
-    global_sequence: sequence,
+    global_sequence: String(sequence),
     act: { account: 'eosio.token', name: 'transfer', data: { from: 'alice', to: 'bob' } }
 });
 export const delta = (block, key = '1') => ({
@@ -71,12 +71,10 @@ export async function fixture(t, options = {}) {
     });
     state.send = (packet) => state.sockets.at(-1).timeout(1000).emitWithAck('message', packet);
     state.lib = (block) =>
-        state.sockets
-            .at(-1)
-            .emit('lib_update', {
-                block_num: block,
-                chain_id: 'test-chain',
-                block_id: `block-${block}`
-            });
+        state.sockets.at(-1).emit('lib_update', {
+            block_num: block,
+            chain_id: 'test-chain',
+            block_id: `block-${block}`
+        });
     return state;
 }

@@ -19,6 +19,9 @@ production deployment, or universal server compatibility follows from that merge
   are copied, identities include delivery flags, and relay restoration rebuilds registrations.
 - LIB buffering works for both consumers and client events. Forked buffered records are
   removed; queue overflow fails explicitly. Reentrant stop during LIB delivery leaves no buffer.
+- The accepted all-chain decimal-string sequence contract is represented in action/receipt
+  types and tested at neighboring 2^53 values, 2^63 and uint64 max through history/live packets.
+  Server projection error retryability, status, and code survive setup and delivery failures.
 - TypeScript 7.0.2 emits ESM/declarations, CommonJS bundles emitted JS, and UMD bundles the
   emitted browser entry. Bun 1.4.3 checks the complete source project, including examples.
 - npm lockfile/pins, prepack build, explicit publish files, conditional declaration exports,
@@ -32,9 +35,11 @@ See CI on the final PR commit for the exact runtime/platform results.
 ## Required server integration before broad launch qualification
 
 [history-api #231](https://github.com/eosrio/hyperion-history-api/issues/231) owns observed
-server gaps: combined account live routing; action/delta reconnect and cleanup maps;
-false/zero/OR filter equivalence; wildcard and optional scope validation; cancellation;
-and observable historical failure termination. The issue pins the inspected upstream source
+release-branch gaps: action-only reconnect detection and action cleanup maps;
+nonsequence false/zero/OR filter equivalence; wildcard and optional scope validation;
+cancellation; and request-scoped historical failure termination. The release branch already
+fixes account-array matching and client-ID replacement; those remain integration regressions
+rather than unresolved predicate defects. The issue pins both main and release source
 and defines end-to-end acceptance with known history, mid-block disconnect, fork, and LIB.
 
 Use exact selector names as the portable baseline. `read_until` currently bounds historical

@@ -2,6 +2,55 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, actionRequest, action, delta, until } from './setup.js';
 
+test('4.5 uint64 strings remain exact through history and binary live delivery', async (t) => {
+    const f = await fixture(t);
+    await f.client.connect();
+    const stream = await f.client.streamActions({ ...actionRequest, start_from: 1 });
+    const seen = [];
+    stream.on('message', (message) => seen.push(message.content));
+    const values = [
+        '9007199254740991',
+        '9007199254740992',
+        '9007199254740993',
+        '9223372036854775808',
+        '18446744073709551615'
+    ];
+    for (const sequence of values) {
+        const record = {
+            ...action(1, sequence),
+            receipts: [
+                {
+                    receiver: 'alice',
+                    global_sequence: sequence,
+                    recv_sequence: sequence,
+                    auth_sequence: [{ account: 'alice', sequence }]
+                }
+            ]
+        };
+        await f.send({
+            type: 'action_trace',
+            mode: 'history',
+            reqUUID: stream.reqUUID,
+            messages: [record]
+        });
+        await f.send({
+            type: 'action_trace',
+            mode: 'live',
+            reqUUID: stream.reqUUID,
+            message: Buffer.from(JSON.stringify(record))
+        });
+    }
+    await f.send({ type: 'history_end', reqUUID: stream.reqUUID });
+    assert.deepEqual(
+        seen.map((record) => record.global_sequence),
+        [...values, ...values]
+    );
+    for (const record of seen) {
+        assert.equal(record.receipts[0].recv_sequence, record.global_sequence);
+        assert.equal(record.receipts[0].auth_sequence[0].sequence, record.global_sequence);
+    }
+});
+
 test('history ACKs progress before consumers attach, including multiple batches (#14)', async (t) => {
     const f = await fixture(t);
     await f.client.connect();

@@ -5,6 +5,11 @@ its independent version; this change does not publish a release.
 
 - Use Node 22 or 24 and the one-argument constructor: `new HyperionStreamClient({endpoint})`.
   The old constructor's injected fetch function is gone; modern Node and browsers provide fetch.
+- Hyperion 4.5 global/receiver/authorization uint64 sequences are decimal strings on all
+  chains, including Antelope. The public action types reflect this intentional server contract
+  change. Preserve them as strings or use BigInt; never reconstruct an exact identity from
+  an unsafe Number. uint32 code/ABI counters, block numbers, and ordinals remain numeric.
+- Server retryability/status/code metadata remains on stream setup and delivery errors.
 - Replace `setAsyncDataHandler` and `setAsyncLibDataHandler` with a stream iterator for awaited
   application work. Use `on('message')` or client `data`/`libData` events for synchronous observers.
   `libStream: true` applies to both stream consumers and client events.

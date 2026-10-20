@@ -9,6 +9,9 @@ for (const format of ['esm', 'umd'])
         `Chromium ${format}: imports, handshake, request, history and completion`,
         { timeout: 20000 },
         async (t) => {
+            const browser = await chromium.launch({ headless: true, timeout: 10000 });
+            // Close browser connections before waiting for the HTTP/Socket.IO fixture to close.
+            t.after(() => browser.close());
             const f = await fixture(t, {
                 http(request, response) {
                     if (request.url === '/') {
@@ -60,9 +63,9 @@ for (const format of ['esm', 'umd'])
                     socket.emit('message', { type: 'history_end', reqUUID: uuid });
                 }
             });
-            const browser = await chromium.launch({ headless: true });
-            t.after(() => browser.close());
             const page = await browser.newPage();
+            page.setDefaultTimeout(5000);
+            page.setDefaultNavigationTimeout(5000);
             const errors = [];
             page.on('pageerror', (error) => errors.push(error.message));
             await page.goto(f.endpoint);

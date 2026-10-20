@@ -9,7 +9,7 @@ import type {
     StreamTypes
 } from './interfaces.js';
 import type { HyperionStreamClient } from './hyperion-stream-client.js';
-import { replaceMetaFields } from './functions.js';
+import { replaceMetaFields, toStreamError } from './functions.js';
 
 /** Owns a subscription's ordering, bounded queues, and consumer lifecycle. */
 export class HyperionStream<T extends StreamResponseTypes> {
@@ -111,9 +111,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
                     typeof response.reqUUID !== 'string' ||
                     !response.reqUUID
                 ) {
-                    finish(
-                        new Error(response?.message || response?.error || 'Stream request rejected')
-                    );
+                    finish(toStreamError(response?.error ?? response ?? 'Stream request rejected'));
                     return;
                 }
                 // Register synchronously: history packets can follow the acknowledgement immediately.
@@ -256,7 +254,7 @@ export class HyperionStream<T extends StreamResponseTypes> {
             return true;
         }
         try {
-            if (event.error) throw new Error(String(event.error));
+            if (event.error) throw toStreamError(event.error);
             if (event.type === 'history_end') {
                 this.historyComplete = true;
                 this.live = true;
