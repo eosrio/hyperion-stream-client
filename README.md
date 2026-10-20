@@ -42,6 +42,8 @@ Alternatively, use `stream.on('message', message => ...)` and `stream.stop()`.
 The first message listener receives cached messages that arrived during subscription setup.
 An event-only stream retains a bounded recent-message cache for a later iterator. Use one
 iterator per stream for sequential asynchronous work. Event callbacks do not delay packet ACKs.
+Thrown exceptions and rejected observer promises reach the client `error` event. Failures in
+client error observers are contained to prevent recursive errors.
 
 `connect()` waits for the chain handshake and rejects on connection failure or timeout.
 Concurrent calls share one connection. `disconnect()` closes all subscriptions, completes
@@ -62,7 +64,7 @@ and cancellation. Delivery flags are part of identity. Caller-owned requests are
 | `read_until` | Historical upper bound, using a block number, offset, or ISO timestamp. `0`/omitted means no explicit historical bound. |
 | `ignore_live` | Set `true` for finite history. The iterator completes after `history_end` and buffered irreversible delivery. |
 | `filters`, `filter_op` | Server-side filters and `and`/`or` combination. Support and history/live equivalence depend on the server. |
-| `replayOnReconnect` | Default `false`. If enabled, replay inclusively from the last delivered block after reconnect. |
+| `replayOnReconnect` | Default `false`. If enabled, replay inclusively from the earliest unread/unconfirmed block or last delivered block after reconnect. |
 
 For finite reads use `ignore_live: true` with a historical `start_from` and, optionally,
 `read_until`. A live subscription does **not** stop automatically at `read_until`.
@@ -82,6 +84,10 @@ history. Replaying the last block avoids skipping records after a partial batch;
 must tolerate duplicates. There is no durable consumer checkpoint or exactly-once guarantee.
 Handle `client.on('fork', ...)` when applying reversible data. LIB mode buffers records
 until confirmation and removes buffered forked records.
+Transport loss or relay outage invalidates unconfirmed records from the old connection.
+With replay enabled, the client replaces them from history and rejects stale subscription UUIDs.
+Without replay, a LIB stream holding unconfirmed data fails with retryable
+`code: 'STREAM_REPLAY_REQUIRED'`; enable replay or create a new subscription from your checkpoint.
 
 Hyperion 4.5 represents global, receiver, and authorization uint64 sequences as canonical
 decimal strings. The client preserves those strings through history, binary live packets,
@@ -146,6 +152,7 @@ Node 22/24, TypeScript 7.0.2, and Bun 1.4.3 are the acceptance baseline.
 npm ci
 npm run typecheck
 npm test                 # builds ESM, CommonJS and UMD, then runs local protocol regressions
+npm run test:cjs         # run the same protocol suite against CommonJS
 npm run test:package     # pack, install externally, check both runtimes and declaration formats
 npx playwright install chromium
 npm run test:browser     # real Chromium ESM and UMD protocol tests
@@ -155,5 +162,7 @@ npm audit
 `npm pack` builds all formats through `prepack`. CI runs Node 22/24 on Linux and Windows;
 Chromium acceptance runs on Linux/Node 24. The default tests use no public Hyperion endpoint.
 Manual browser smoke pages are available through `npm run serve:tests`.
+The default ESM suite enforces 95% lines, 88% branches, and 90% functions for core runtime
+coverage. See the [bug-discovery report](docs/reviews/adversarial-coverage.md) for scope and results.
 
 MIT license. [Issues](https://github.com/eosrio/hyperion-stream-client/issues).

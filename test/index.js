@@ -8,5 +8,7 @@ import './connection.test.js';
 import './streaming.test.js';
 import './error-handling.test.js';
 import './api.test.js';
+import './adversarial.test.js';
+import './failure-paths.test.js';
 
 console.log('Running all Hyperion Stream Client tests...');

@@ -27,6 +27,14 @@ production deployment, or universal server compatibility follows from that merge
 - npm lockfile/pins, prepack build, explicit publish files, conditional declaration exports,
   external ESM/CJS/TypeScript consumer checks, and Chromium ESM/UMD acceptance are present.
 - CI runs Node 22/24 on Linux and Windows and real Chromium on Linux/Node24.
+- The same 60 protocol regressions run against ESM and CommonJS. ESM coverage is gated at
+  95% lines, 88% branches and 90% functions. Six Chromium ESM/UMD cases include structured
+  rejection, malformed binary data, exact uint64 strings and remote cancellation.
+- Adversarial recovery regressions prevent stale fork confirmation, stale UUID delivery,
+  and replay boundaries jumping over unread data during repeated outages. LIB subscriptions
+  with unconfirmed data require replay after an outage or fail with `STREAM_REPLAY_REQUIRED`.
+  Cancellation, immediate retry, observer rejections and LIB watchdog failures are covered.
+  See the [discovery report](reviews/adversarial-coverage.md).
 
 Protocol regressions use a real loopback Socket.IO server. They do not stand in for a running
 Hyperion server, Elasticsearch query correctness, retained history, or a production proxy.
@@ -54,7 +62,7 @@ and [release coordination #24](https://github.com/eosrio/hyperion-tools/issues/2
 
 Dependency PRs #11, #12, #15, and #16 are superseded by the refreshed locked dependencies.
 PR #4 describes the removed two-argument constructor and fetch injection; the migration guide
-and current README replace it. Close these obsolete proposals after PR #17 is merged.
+and current README replace it. These obsolete proposals were closed after PR #17 merged.
 
 Client issues #13 and #14 came from Node16/client1.0.3 and old deployments. Modern regressions
 cover silent connection failure, stalled batches, and the history/live transition. Their original
