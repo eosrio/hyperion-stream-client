@@ -32,6 +32,7 @@ pub struct Options {
     pub connect_timeout: Duration,
     pub write_timeout: Duration,
     pub idle_timeout: Duration,
+    pub max_pending_events: usize,
     pub headers: HeaderMap,
     pub tls: Option<Arc<rustls::ClientConfig>>,
 }
@@ -44,6 +45,7 @@ impl Default for Options {
             connect_timeout: Duration::from_secs(5),
             write_timeout: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(45),
+            max_pending_events: 64,
             headers: HeaderMap::new(),
             tls: None,
         }
@@ -52,6 +54,26 @@ impl Default for Options {
 
 fn transport_error(error: impl std::fmt::Display) -> Failure {
     Failure::new("TRANSPORT_ERROR", error.to_string(), true)
+}
+
+fn socket_failure(error: tokio_tungstenite::tungstenite::Error) -> Failure {
+    use tokio_tungstenite::tungstenite::{error::ProtocolError, Error};
+    let (code, retryable) = match &error {
+        Error::Http(response) => (
+            "HTTP_ERROR",
+            response.status().is_server_error() || matches!(response.status().as_u16(), 408 | 429),
+        ),
+        Error::Tls(_) => ("TLS_ERROR", false),
+        Error::Io(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            ("TLS_OR_PROTOCOL_ERROR", false)
+        }
+        Error::Capacity(_) => ("MESSAGE_TOO_LARGE", false),
+        Error::Protocol(ProtocolError::ResetWithoutClosingHandshake) => ("TRANSPORT_ERROR", true),
+        Error::Protocol(_) | Error::Utf8(_) | Error::AttackAttempt => ("PROTOCOL_ERROR", false),
+        Error::Url(_) | Error::HttpFormat(_) => ("INVALID_ENDPOINT", false),
+        _ => ("TRANSPORT_ERROR", true),
+    };
+    Failure::new(code, error.to_string(), retryable)
 }
 
 fn default_tls() -> Result<Arc<rustls::ClientConfig>, Failure> {
@@ -68,7 +90,7 @@ fn default_tls() -> Result<Arc<rustls::ClientConfig>, Failure> {
 
 async fn open(endpoint: &str, options: &Options) -> Result<(Socket, Hello), Failure> {
     timeout(options.connect_timeout, async {
-        let mut request = endpoint.into_client_request().map_err(transport_error)?;
+        let mut request = endpoint.into_client_request().map_err(socket_failure)?;
         for (key, value) in &options.headers {
             request.headers_mut().insert(key, value.clone());
         }
@@ -91,7 +113,7 @@ async fn open(endpoint: &str, options: &Options) -> Result<(Socket, Hello), Fail
             Some(Connector::Rustls(tls)),
         )
         .await
-        .map_err(transport_error)?;
+        .map_err(socket_failure)?;
         if response
             .headers()
             .get("sec-websocket-protocol")
@@ -108,7 +130,7 @@ async fn open(endpoint: &str, options: &Options) -> Result<(Socket, Hello), Fail
             .next()
             .await
             .ok_or_else(|| transport_error("Closed before hello"))?
-            .map_err(transport_error)?;
+            .map_err(socket_failure)?;
         let Message::Text(text) = message else {
             return Err(Failure::new(
                 "PROTOCOL_ERROR",
@@ -150,10 +172,13 @@ pub struct WsClient {
 
 impl WsClient {
     pub async fn connect(endpoint: &str, options: Options) -> Result<Self, Failure> {
+        let mut core = Client::new(options.core.clone())?;
         if !(128..=1024 * 1024).contains(&options.max_message_bytes)
             || options.connect_timeout.is_zero()
             || options.write_timeout.is_zero()
             || options.idle_timeout.is_zero()
+            || options.max_pending_events < options.core.max_streams + 2
+            || options.max_pending_events > 4096
         {
             return Err(Failure::new(
                 "INVALID_CONFIG",
@@ -161,7 +186,6 @@ impl WsClient {
                 false,
             ));
         }
-        let mut core = Client::new(options.core.clone())?;
         let (socket, hello) = open(endpoint, &options).await?;
         let heartbeat = Duration::from_millis(hello.heartbeat_interval_ms);
         let transition = core.receive(Input::Hello(hello))?;
@@ -189,11 +213,21 @@ impl WsClient {
         self.socket.is_some() && self.core.is_connected()
     }
 
-    async fn broken(&mut self, error: Failure) -> Failure {
+    fn detach(&mut self) -> Result<(), Failure> {
         self.socket = None;
         self.deferred.clear();
-        if let Ok(t) = self.core.disconnect() {
-            self.pending.extend(t.events);
+        // Preserve terminal outcomes even when replaced transport notifications
+        // become obsolete. A fixed reserve holds disconnect outcomes once; an
+        // additional detach cannot add them again because the core is offline.
+        self.pending.retain(|e| matches!(e, Event::Error(_)));
+        let transition = self.core.disconnect()?;
+        self.pending.extend(transition.events);
+        Ok(())
+    }
+
+    async fn broken(&mut self, error: Failure) -> Failure {
+        if let Err(failure) = self.detach() {
+            return failure;
         }
         error
     }
@@ -213,7 +247,7 @@ impl WsClient {
         let sent = timeout(self.options.write_timeout, socket.send(Message::text(text))).await;
         let error = match sent {
             Ok(Ok(())) => return Ok(()),
-            Ok(Err(error)) => transport_error(error),
+            Ok(Err(error)) => socket_failure(error),
             Err(_) => Failure::new("WRITE_TIMEOUT", "WebSocket write deadline elapsed", true),
         };
         Err(self.broken(error).await)
@@ -229,6 +263,18 @@ impl WsClient {
     }
 
     async fn apply(&mut self, transition: Transition<Request, Value>) -> Result<(), Failure> {
+        if !transition.events.is_empty()
+            && self.pending.len().saturating_add(transition.events.len())
+                > self.options.max_pending_events
+        {
+            return Err(self
+                .broken(Failure::new(
+                    "EVENT_QUEUE_OVERFLOW",
+                    "Poll events before issuing more controls",
+                    true,
+                ))
+                .await);
+        }
         self.pending.extend(transition.events);
         self.deferred.extend(transition.commands);
         self.flush_deferred().await
@@ -275,11 +321,14 @@ impl WsClient {
     /// Explicit bounded reconnect, preserving the core's inclusive replay point.
     /// Authentication, source and protocol failures are never infinitely retried.
     pub async fn reconnect(&mut self) -> Result<(), Failure> {
-        self.socket = None;
-        self.core.disconnect()?;
-        self.pending.clear();
-        self.deferred.clear();
+        self.detach()?;
+        self.pending.retain(|e| matches!(e, Event::Error(_)));
         let (socket, hello) = open(&self.endpoint, &self.options).await?;
+        // Offline/handshake time is elapsed before a replacement attempt starts.
+        // It must not consume that new attempt's acceptance deadline.
+        let elapsed = u64::try_from(self.clock.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let transition = self.core.advance(elapsed)?;
+        self.pending.extend(transition.events);
         let transition = self.core.receive(Input::Hello(hello.clone()))?;
         self.socket = Some(socket);
         self.heartbeat = Duration::from_millis(hello.heartbeat_interval_ms);
@@ -325,7 +374,7 @@ impl WsClient {
             if let Some(packet) = received {
                 let message = match packet {
                     Some(Ok(message)) => message,
-                    Some(Err(error)) => return Err(self.broken(transport_error(error)).await),
+                    Some(Err(error)) => return Err(self.broken(socket_failure(error)).await),
                     None => return Err(self.broken(transport_error("WebSocket closed")).await),
                 };
                 self.last_received = Instant::now();

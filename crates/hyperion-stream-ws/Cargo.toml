@@ -1,6 +1,8 @@
 [package]
 name = "hyperion-stream-ws"
 description = "Tokio, Tungstenite, JSON and Rustls adapter for Hyperion native streaming"
+readme = "README.md"
+exclude = ["tests/**"] # Shared conformance runs from the repository workspace.
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

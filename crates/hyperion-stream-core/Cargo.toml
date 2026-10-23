@@ -1,6 +1,7 @@
 [package]
 name = "hyperion-stream-core"
 description = "Dependency-free Hyperion stream subscription and recovery state machine"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

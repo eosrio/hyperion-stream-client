@@ -12,6 +12,10 @@ use tokio_tungstenite::{
 };
 
 #[tokio::test]
+#[allow(
+    clippy::result_large_err,
+    reason = "Tungstenite requires this external callback error type"
+)]
 async fn actual_websocket_delivers_json_and_acknowledges_after_application_acceptance() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

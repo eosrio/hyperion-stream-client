@@ -122,6 +122,10 @@ Client local cancellation immediately stops delivery; its completion does not
 claim the remote acknowledgement has arrived. Cancelling before acceptance uses
 `connection_id`, `stream_id`, `generation`, `request_id` with `subscription_id:null`.
 The server must cancel that pending attempt too.
+For pending cancellation the server may allocate its subscription ID before
+accepted, and return cancelled with the full scope and optional original
+request_id. No artificial accepted packet is required. Locally cancelled clients
+ignore that late acknowledgement; confirmed server cleanup is tested separately.
 
 ```json
 {"type":"error","connection_id":"1","stream_id":"1","generation":"1","request_id":"1","code":"HISTORY_UNAVAILABLE","message":"Retained history unavailable","retryable":true}
@@ -145,8 +149,8 @@ LIB cannot be hidden by repeated equal LIB notifications or heartbeats.
 ## Fork, LIB and recovery
 
 ```json
-{"type":"lib","chain_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","block_num":100,"block_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
-{"type":"fork","chain_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","starting_block":101,"ending_block":103,"new_block_id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+{"type":"lib","connection_id":"1","chain_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","block_num":100,"block_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+{"type":"fork","connection_id":"1","chain_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","starting_block":101,"ending_block":103,"new_block_id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
 ```
 
 These controls also require `connection_id` and are ordered within that connection.
@@ -162,9 +166,9 @@ client cancels/replaces subscriptions with fresh request IDs/generations, retain
 the earliest unread/unconfirmed recovery block across repeated outages, and
 replays inclusively. Already accepted head-mode records can be replayed too.
 With replay disabled, emit retryable STREAM_REPLAY_REQUIRED. Never confirm old
-buffer contents using a LIB from a later connection. The server must send a new
-hello/connection incarnation on relay replacement, or close the WebSocket so the
-client can reconnect; it may not silently keep old public scopes active.
+buffer contents using a LIB from a later connection. Relay replacement/outage
+closes the native WebSocket. Reconnect gets a new hello/connection incarnation;
+an in-band second hello is invalid. Old public scopes cannot silently stay active.
 
 The accepted start_from is a real resolved lower bound, never the first matching
 row or an optimistic indexed head. A live-only anchor uses the observed router

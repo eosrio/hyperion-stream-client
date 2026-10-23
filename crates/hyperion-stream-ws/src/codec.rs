@@ -16,7 +16,10 @@ impl<'de> Deserialize<'de> for Decimal {
 }
 
 pub fn parse_decimal(s: &str) -> Option<u64> {
-    if s.is_empty() || (s.len() > 1 && s.starts_with('0')) || !s.bytes().all(|b| b.is_ascii_digit())
+    if s.is_empty()
+        || s.len() > 20
+        || (s.len() > 1 && s.starts_with('0'))
+        || !s.bytes().all(|b| b.is_ascii_digit())
     {
         return None;
     }
@@ -135,7 +138,7 @@ fn exact_metadata(value: &Value) -> Result<(), Failure> {
     };
     for key in ["global_sequence", "recv_sequence", "sequence"] {
         if let Some(v) = object.get(key) {
-            if !v.as_str().is_some_and(|s| parse_decimal(s).is_some()) {
+            if v.as_str().and_then(parse_decimal).is_none() {
                 return Err(invalid(format!("{key} must be an exact decimal string")));
             }
         }
