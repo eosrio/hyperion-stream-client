@@ -267,6 +267,15 @@ impl WsClient {
             && self.pending.len().saturating_add(transition.events.len())
                 > self.options.max_pending_events
         {
+            // Terminal errors already removed their streams in the core. Keep
+            // those outcomes in the reserve; each reduces the remaining active
+            // stream disconnect obligations one-for-one.
+            self.pending.extend(
+                transition
+                    .events
+                    .into_iter()
+                    .filter(|e| matches!(e, Event::Error(_))),
+            );
             return Err(self
                 .broken(Failure::new(
                     "EVENT_QUEUE_OVERFLOW",
@@ -303,6 +312,16 @@ impl WsClient {
             ));
         }
         self.advance().await?;
+        // Admission must also be bounded while offline: an empty subscribe
+        // transition can create a future terminal error obligation. Otherwise
+        // repeated failed reconnects could reuse the disconnect reserve forever.
+        if self.pending.len() >= self.options.max_pending_events {
+            return Err(Failure::new(
+                "EVENT_QUEUE_OVERFLOW",
+                "Poll terminal outcomes before creating another subscription",
+                true,
+            ));
+        }
         let transition = self
             .core
             .subscribe(stream_id, request, delivery, replay_on_reconnect)?;
