@@ -46,8 +46,8 @@ for (const format of ['esm', 'umd'])
                         const iterator=stream[Symbol.asyncIterator]();
                         const {value}=await iterator.next();
                         const {done}=await iterator.return();
+                        window.disconnectClient=()=>client.disconnect();
                         window.result={sequence:value.content.global_sequence,block:value.content.block_num,done};
-                        client.disconnect();
                         `
                         }
                     } catch(error) {window.failure=String(error);}
@@ -133,6 +133,11 @@ for (const format of ['esm', 'umd'])
                         }
                       : { sequence: '18446744073709551615', block: 42, done: true }
             );
-            if (scenario === 'binary') await until(() => f.cancellations.length === 1);
+            if (scenario === 'binary') {
+                // stop/iterator return completes local consumption; remote cancellation
+                // is asynchronous. Verify it before deliberately closing the transport.
+                await until(() => f.cancellations.length === 1);
+                await page.evaluate(() => window.disconnectClient());
+            }
             assert.deepEqual(errors, []);
         });

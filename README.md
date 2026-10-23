@@ -8,6 +8,13 @@ independently of the server. Merging changes does not publish an npm release or 
 every server deployment. See [migration notes](docs/MIGRATION.md) and the
 [launch checklist](docs/LAUNCH.md).
 
+An experimental [Rust native client](crates/hyperion-stream-ws/README.md) is also
+available in this workspace: a [zero-dependency core](crates/hyperion-stream-core/README.md)
+and a separate Tokio/Tungstenite/Rustls adapter. It targets the additive native
+WebSocket + JSON protocol coordinated in [HAPI #294](https://github.com/eosrio/hyperion-history-api/issues/294).
+See the [wire contract](protocol/v1/README.md) and [shared conformance](conformance/README.md).
+The native endpoint and retained-chain acceptance are still being integrated.
+
 ## Usage
 
 ```sh

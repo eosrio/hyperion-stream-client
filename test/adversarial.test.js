@@ -70,7 +70,15 @@ test(
     'LIB delivery after reconnect never confirms a forked record buffered on the old connection',
     { timeout: 10000 },
     async (t) => {
-        const f = await fixture(t, { client: { libStream: true }, resend: true });
+        const f = await fixture(t, {
+            client: { libStream: true },
+            resend: true,
+            request({ uuid, ack }) {
+                const response = { status: 'OK', reqUUID: uuid };
+                if (uuid === 'request-1') ack(response);
+                else setTimeout(() => ack(response), 25);
+            }
+        });
         await f.client.connect();
         const stream = await f.client.streamActions({ ...actionRequest, replayOnReconnect: true });
         const delivered = [];
@@ -82,7 +90,7 @@ test(
             messages: [{ ...action(10), block_id: 'orphaned-fork' }]
         });
         f.sockets[0].conn.close();
-        await until(() => f.requests.length === 2);
+        await until(() => f.requests.length === 2 && stream.reqUUID === f.requests[1].uuid);
         await f.send({
             type: 'action_trace',
             mode: 'history',
