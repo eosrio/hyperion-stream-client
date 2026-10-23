@@ -30,11 +30,23 @@ function uniqueEnvelope(text) {
 
 function metadata(payload) {
   assert(object(payload));
-  for (const key of ['global_sequence', 'recv_sequence', 'sequence']) if (Object.hasOwn(payload, key)) assert(decimal(payload[key]));
-  for (const key of ['receipt', 'receipts', 'auth_sequence']) {
-    const value = payload[key];
-    if (Array.isArray(value)) for (const child of value) { if (object(child)) metadata(child); }
-    else if (object(value)) metadata(value);
+  if (Object.hasOwn(payload, 'global_sequence')) assert(decimal(payload.global_sequence));
+  const receipt = value => {
+    assert(object(value));
+    for (const key of ['global_sequence', 'recv_sequence']) if (Object.hasOwn(value, key)) assert(decimal(value[key]));
+    if (Object.hasOwn(value, 'auth_sequence')) {
+      assert(Array.isArray(value.auth_sequence));
+      for (const auth of value.auth_sequence) { assert(object(auth)); if (Object.hasOwn(auth, 'sequence')) assert(decimal(auth.sequence)); }
+    }
+  };
+  if (payload.receipt != null) {
+    if (Array.isArray(payload.receipt)) {
+      assert.equal(payload.receipt.length, 2); assert.equal(typeof payload.receipt[0], 'string'); receipt(payload.receipt[1]);
+    } else receipt(payload.receipt);
+  }
+  if (Object.hasOwn(payload, 'receipts')) {
+    assert(Array.isArray(payload.receipts));
+    for (const value of payload.receipts) receipt(value);
   }
 }
 

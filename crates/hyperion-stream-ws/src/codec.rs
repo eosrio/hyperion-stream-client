@@ -132,29 +132,51 @@ fn invalid(message: impl Into<String>) -> Failure {
     Failure::new("PROTOCOL_ERROR", message, false)
 }
 
-fn exact_metadata(value: &Value) -> Result<(), Failure> {
+fn exact_fields(value: &Value, fields: &[&str]) -> Result<(), Failure> {
     let Some(object) = value.as_object() else {
-        return Err(invalid("Record payload must be an object"));
+        return Err(invalid("Known sequence metadata must be an object"));
     };
-    for key in ["global_sequence", "recv_sequence", "sequence"] {
-        if let Some(v) = object.get(key) {
+    for key in fields {
+        if let Some(v) = object.get(*key) {
             if v.as_str().and_then(parse_decimal).is_none() {
                 return Err(invalid(format!("{key} must be an exact decimal string")));
             }
         }
     }
-    for key in ["receipt", "receipts", "auth_sequence"] {
-        if let Some(v) = object.get(key) {
-            if let Some(values) = v.as_array() {
-                // ABI variant receipts may be [type, object]. Leave their tag intact.
-                for child in values {
-                    if child.is_object() {
-                        exact_metadata(child)?;
-                    }
-                }
-            } else if v.is_object() {
-                exact_metadata(v)?;
+    Ok(())
+}
+
+fn exact_receipt(receipt: &Value) -> Result<(), Failure> {
+    exact_fields(receipt, &["global_sequence", "recv_sequence"])?;
+    if let Some(value) = receipt.get("auth_sequence") {
+        let authorizations = value
+            .as_array()
+            .ok_or_else(|| invalid("auth_sequence must be an array"))?;
+        for authorization in authorizations {
+            exact_fields(authorization, &["sequence"])?;
+        }
+    }
+    Ok(())
+}
+
+fn exact_metadata(payload: &Value) -> Result<(), Failure> {
+    exact_fields(payload, &["global_sequence"])?;
+    if let Some(receipt) = payload.get("receipt").filter(|v| !v.is_null()) {
+        if let Some(variant) = receipt.as_array() {
+            if variant.len() != 2 || !variant[0].is_string() {
+                return Err(invalid("Invalid SHIP receipt variant"));
             }
+            exact_receipt(&variant[1])?;
+        } else {
+            exact_receipt(receipt)?;
+        }
+    }
+    if let Some(value) = payload.get("receipts") {
+        let receipts = value
+            .as_array()
+            .ok_or_else(|| invalid("receipts must be an array"))?;
+        for receipt in receipts {
+            exact_receipt(receipt)?;
         }
     }
     Ok(())
