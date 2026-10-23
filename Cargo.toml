@@ -1,0 +1,21 @@
+[workspace]
+members = ["crates/hyperion-stream-core", "crates/hyperion-stream-ws"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/eosrio/hyperion-stream-client"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
