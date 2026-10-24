@@ -52,7 +52,7 @@
     "url": "https://eosrio.io"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "license": "MIT",
   "dependencies": {

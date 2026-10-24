@@ -1,7 +1,7 @@
 # Hyperion Stream Client
 
 Typed action and table-delta subscriptions over Hyperion's Socket.IO `/stream` transport.
-Supports Node.js 22/24, ES modules, CommonJS, and modern browsers.
+Requires Node.js 24 or newer; CI covers Node.js 24/26, ES modules, CommonJS, and modern browsers.
 
 This checkout contains the client preparation for Hyperion 4.5. The client versions
 independently of the server. Merging changes does not publish an npm release or qualify
@@ -152,7 +152,7 @@ Automated Chromium tests exercise both formats against a loopback server.
 
 ## Development
 
-Node 22/24, TypeScript 7.0.2, and Bun 1.4.3 are the acceptance baseline.
+Node 24/26, TypeScript 7.0.2, and Bun 1.4.4 are the acceptance baseline.
 `package-lock.json` is authoritative; Bun supplies the complete-project checker.
 
 ```sh
@@ -166,7 +166,7 @@ npm run test:browser     # real Chromium ESM and UMD protocol tests
 npm audit
 ```
 
-`npm pack` builds all formats through `prepack`. CI runs Node 22/24 on Linux and Windows;
+`npm pack` builds all formats through `prepack`. CI runs Node 24/26 on Linux and Windows;
 Chromium acceptance runs on Linux/Node 24. The default tests use no public Hyperion endpoint.
 Manual browser smoke pages are available through `npm run serve:tests`.
 The default ESM suite enforces 95% lines, 88% branches, and 90% functions for core runtime
