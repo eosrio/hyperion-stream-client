@@ -23,7 +23,7 @@ production deployment, or universal server compatibility follows from that merge
   types and tested at neighboring 2^53 values, 2^63 and uint64 max through history/live packets.
   Server projection error retryability, status, and code survive setup and delivery failures.
 - TypeScript 7.0.2 emits ESM/declarations, CommonJS bundles emitted JS, and UMD bundles the
-  emitted browser entry. Bun 1.4.3 checks the complete source project, including examples.
+  emitted browser entry. Bun 1.4.4 checks the complete source project, including examples.
 - npm lockfile/pins, prepack build, explicit publish files, conditional declaration exports,
   external ESM/CJS/TypeScript consumer checks, and Chromium ESM/UMD acceptance are present.
 - CI runs Node 24/26 on Linux and Windows and real Chromium on Linux/Node24.

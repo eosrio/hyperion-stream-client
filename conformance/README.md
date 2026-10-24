@@ -24,7 +24,7 @@ node conformance/verify.mjs --core
 cargo test --workspace --all-targets --locked
 ```
 
-Node 22+ must be on PATH for the native network peer. Set `HYPERION_NODE` to an
+Node 24+ must be on PATH for the native network peer. Set `HYPERION_NODE` to an
 explicit executable to select another runtime. Core-only tests require only Rust:
 `cargo test -p hyperion-stream-core --locked`.
 
