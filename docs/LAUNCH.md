@@ -26,7 +26,7 @@ production deployment, or universal server compatibility follows from that merge
   emitted browser entry. Bun 1.4.3 checks the complete source project, including examples.
 - npm lockfile/pins, prepack build, explicit publish files, conditional declaration exports,
   external ESM/CJS/TypeScript consumer checks, and Chromium ESM/UMD acceptance are present.
-- CI runs Node 22/24 on Linux and Windows and real Chromium on Linux/Node24.
+- CI runs Node 24/26 on Linux and Windows and real Chromium on Linux/Node24.
 - The same 60 protocol regressions run against ESM and CommonJS. ESM coverage is gated at
   95% lines, 88% branches and 90% functions. Six Chromium ESM/UMD cases include structured
   rejection, malformed binary data, exact uint64 strings and remote cancellation.

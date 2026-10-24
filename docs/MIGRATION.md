@@ -3,7 +3,7 @@
 The Hyperion 4.5 launch work builds on the existing v4 release candidate. The package keeps
 its independent version; this change does not publish a release.
 
-- Use Node 22 or 24 and the one-argument constructor: `new HyperionStreamClient({endpoint})`.
+- Use Node 24 or newer (the 4.5 minimum) and the one-argument constructor: `new HyperionStreamClient({endpoint})`.
   The old constructor's injected fetch function is gone; modern Node and browsers provide fetch.
 - Hyperion 4.5 global/receiver/authorization uint64 sequences are decimal strings on all
   chains, including Antelope. The public action types reflect this intentional server contract
