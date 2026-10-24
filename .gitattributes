@@ -1,0 +1,6 @@
+*.rs text eol=lf
+*.toml text eol=lf
+Cargo.lock text eol=lf
+conformance/** text eol=lf
+protocol/** text eol=lf
+*.der binary

@@ -26,6 +26,7 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: npm ci
+      - run: node conformance/verify.mjs
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:cjs
